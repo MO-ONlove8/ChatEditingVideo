@@ -1,0 +1,24 @@
+# Windows only for now. Not signed, no auto-update (local use only).
+appId: com.chateditingvideo.desktop
+productName: Chat Editing Video
+directories:
+  output: release
+  buildResources: build
+files:
+  - out/**
+  - package.json
+  - '!node_modules/**'
+# All runtime deps are bundled into out/ by electron-vite, so node_modules is not needed.
+npmRebuild: false
+extraResources:
+  - from: ../chat-editing-video-web/dist
+    to: web
+    filter: ['**/*', '!**/*.map']
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false

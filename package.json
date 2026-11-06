@@ -1,0 +1,49 @@
+{
+  "name": "chat-editing-video",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@9.15.9",
+  "engines": {
+    "node": ">=24.11.0 <25",
+    "pnpm": ">=9.15.0 <10"
+  },
+  "scripts": {
+    "dev": "turbo run dev --filter=./apps/*",
+    "dev:server": "turbo run dev --filter=@cev/server...",
+    "dev:web": "turbo run dev --filter=@cev/web...",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "e2e": "turbo run build --filter=@cev/web --filter=@cev/desktop && pnpm --filter @cev/e2e e2e",
+    "db:up": "docker compose -f docker/docker-compose.yml up -d",
+    "db:down": "docker compose -f docker/docker-compose.yml down",
+    "db:generate": "pnpm --filter @cev/server db:generate",
+    "db:migrate": "pnpm --filter @cev/server db:migrate",
+    "db:seed": "pnpm --filter @cev/server db:seed",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,mjs,cjs}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,yml,yaml,css,html}": "prettier --write"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^24",
+    "eslint": "^10.14.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.14.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.6.0",
+    "prettier": "^3.9.10",
+    "turbo": "^2.11.10",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.72.1"
+  }
+}

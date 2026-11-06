@@ -1,0 +1,10 @@
+node_modules
+dist
+out
+release
+coverage
+.turbo
+pnpm-lock.yaml
+apps/chat-editing-video-server/drizzle
+test-results
+playwright-report

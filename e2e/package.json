@@ -1,0 +1,18 @@
+{
+  "name": "@cev/e2e",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "e2e": "playwright test",
+    "e2e:web": "playwright test --project=web",
+    "e2e:desktop": "playwright test --project=desktop",
+    "e2e:install": "playwright install chromium",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint tests playwright.config.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.0",
+    "@types/node": "^24"
+  }
+}
