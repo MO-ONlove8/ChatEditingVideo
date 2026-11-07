@@ -1,5 +1,8 @@
 import { Test } from '@nestjs/testing';
-import type { INestApplication } from '@nestjs/common';
+import { type INestApplication, UnauthorizedException } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
+import { AuthGuard } from '../../src/auth/auth.guard.js';
+import { AuthService } from '../../src/auth/auth.service.js';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { LoggerModule } from 'nestjs-pino';
@@ -31,7 +34,19 @@ describe('ProjectsController (HTTP)', () => {
     const moduleRef = await Test.createTestingModule({
       imports: [LoggerModule.forRoot({ pinoHttp: { level: 'silent' } })],
       controllers: [ProjectsController],
-      providers: [{ provide: ProjectsService, useValue: service }],
+      providers: [
+        { provide: ProjectsService, useValue: service },
+        {
+          provide: AuthService,
+          useValue: {
+            authenticate: async (token: string) => {
+              if (token !== 'test-session') throw new UnauthorizedException();
+              return { user: { id: 'test-owner' } };
+            },
+          },
+        },
+        { provide: APP_GUARD, useClass: AuthGuard },
+      ],
     }).compile();
     app = configureApp(moduleRef.createNestApplication(), env);
     await app.init();
@@ -42,12 +57,22 @@ describe('ProjectsController (HTTP)', () => {
   });
 
   it('GET /api/projects lists projects', async () => {
-    await request(app.getHttpServer()).get('/api/projects').expect(200).expect([]);
+    await request(app.getHttpServer())
+      .get('/api/projects')
+      .set('Authorization', 'Bearer test-session')
+      .expect(200)
+      .expect([]);
+    expect(service.list).toHaveBeenCalledWith('test-owner');
+  });
+
+  it('rejects anonymous requests', async () => {
+    await request(app.getHttpServer()).get('/api/projects').expect(401);
   });
 
   it('POST /api/projects validates with the shared zod schema', async () => {
     const res = await request(app.getHttpServer())
       .post('/api/projects')
+      .set('Authorization', 'Bearer test-session')
       .send({ name: '' })
       .expect(400);
     expect(res.body.issues[0].path).toBe('name');
@@ -57,6 +82,7 @@ describe('ProjectsController (HTTP)', () => {
   it('POST /api/projects trims and creates', async () => {
     const res = await request(app.getHttpServer())
       .post('/api/projects')
+      .set('Authorization', 'Bearer test-session')
       .send({ name: '  Demo  ' })
       .expect(201);
     expect(res.body.name).toBe('Demo');

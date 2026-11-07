@@ -15,7 +15,8 @@
 - Node 24（见 `.nvmrc`）：`nvm install 24.22.2 && nvm use 24.22.2`
 - pnpm 9：`corepack enable && corepack prepare pnpm@9.15.9 --activate`
 - Docker Desktop（运行 PostgreSQL / Redis）
-- Ollama，已拉取 `qwen3:8b`（聊天功能需要）
+- FFmpeg / FFprobe（需含 libx264、AAC、zscale、tonemap；通过 PATH 或 `.env` 配置可执行文件路径）
+- Ollama，已拉取 `qwen3:8b`（后续聊天功能使用；登录、上传、素材处理不依赖 Ollama）
 
 ## 快速开始
 
@@ -28,7 +29,7 @@ pnpm db:seed        # 可选：示例数据
 pnpm dev            # 同时启动 server(:3000) + web(:5173) + desktop
 ```
 
-只跑浏览器版：`pnpm dev:web`（同时启动 server），打开 http://localhost:5173 。
+只跑浏览器版：分别在两个终端运行 `pnpm dev:server` 和 `pnpm dev:web`，打开 http://localhost:5173 。
 
 ## 常用命令
 
@@ -42,14 +43,28 @@ pnpm dev            # 同时启动 server(:3000) + web(:5173) + desktop
 
 ## 架构要点
 
-**剪辑执行位置（待需求文档确定）**：对话产出的是声明式的 `EditPlan`（`packages/shared/src/schemas/edit-plan.ts`），由 `EditExecutor` 接口的两个实现执行：
+**剪辑执行位置**：首版素材处理和成品生成由服务端负责，关闭桌面应用不会停止已开始的服务端任务。底层保留 `EditExecutor` 的两种适配：
 
 - 桌面端本地：`apps/chat-editing-video-desktop/src/main/local-executor.ts`（IPC 推送进度）
 - 服务端：`apps/chat-editing-video-server/src/jobs/executors/ffmpeg-server.executor.ts`（BullMQ worker，Redis pub/sub → SSE 推送进度）
 
-两者目前都是**桩实现**：模拟进度并输出一个 JSON manifest，尚未调用 FFmpeg。Web 端 `src/lib/executor.ts` 按设置选择其一，浏览器版只能用服务端。
+以上两个剪辑执行适配目前仍是**桩实现**，输出 JSON manifest。当前真实素材处理使用独立的 `MediaProcessing` 和原生 FFmpeg；产品界面暂未开放剪辑与成品导出，不把 manifest 当作成品视频。
 
-**进度推送**：聊天用 `POST /api/chat/stream`（fetch 读取 SSE），任务进度用 `GET /api/jobs/:id/events`（EventSource）。
+**登录与账号隔离**：手机号 + 固定测试验证码 `123456`，不发送短信。先获取验证码再登录；验证码默认 5 分钟有效，60 秒获取间隔，会话默认 7 天有效（见 `.env.example`）。新登录替换旧会话；任务、素材及生成进度均按账号校验访问权限。历史无归属任务保留在数据库中，不展示给新账号。
+
+**页面**：`/login`、`/tasks`、`/tasks/new`、`/tasks/:id/edit`、`/tasks/:id/player`。新建空页不会创建数据库任务；第一个视频完整上传并通过服务端校验后才创建任务，同批后续视频归入同一任务。支持真实上传、逐秒缩略图、逐帧查看、重命名和删除；对话剪辑、时间轴保存与成品播放尚未开放。
+
+**素材处理**：Mediabunny 在浏览器检查 MP4 / MOV 元信息，XHR 提供进度和取消，服务端流式落盘后再次校验。默认每批最多 3 个，每个任务最多 10 个（含上传中），每文件最大 1 GB（1024 MB），时长不限；限制见 `.env.example`。文件完整上传后保存原件并分配稳定的 V 编号，删除后不复用。BullMQ 串行处理，数据库记录可在重启后恢复入队。退出登录或关闭客户端不会中止已保存素材的处理。
+
+FFmpeg 生成 H.264 / yuv420p、30 fps、最长边不超过 1920 的 MP4，AAC 48 kHz 双声道，无音轨时补静音，处理旋转、非方形像素、VFR 和 HDR → SDR。每秒一个缩略图，按 30 秒分页加载雪碧图；点击某秒按需提取该秒实际存在的帧（末秒不补虚假帧）。所有位置按处理后视频的整数帧计算。帧图缓存默认 2 GB，按最近访问清理；临时上传 24 小时过期。
+
+**媒体访问**：缩略图、完整帧和规范化视频都校验账号归属。凭证只放 Authorization 请求头；视频支持 HTTP Range / HEAD。生成中或失败的素材不能查看帧图，失败保留原件并可重试或删除。上传中离开会提示，未完成传输取消，已保存素材保留。
+
+**交互预览**：运行 `pnpm dev:web` 后访问 http://localhost:5173/dev/ui-states ，可单独验证关键弹窗、帧图放大、复制时间、失败重试与上传离开保护。此入口只在开发环境提供，使用演示数据。
+
+**进度推送**：聊天、任务、素材进度和会话失效通知通过携带 Bearer 凭证的 fetch SSE 读取。素材事件断线时通过轮询兜底；上传响应丢失先查询保存结果。断开客户端连接不取消服务端队列任务。
+
+**桌面会话**：主进程使用 Electron `safeStorage` 加密保存；加密不可用时仅存内存。浏览器验证入口使用 sessionStorage。开发与 E2E 可通过 `CEV_USER_DATA_DIR` 隔离应用配置目录。
 
 **存储**：本地文件系统（`STORAGE_DIR`），通过 `StorageService` 抽象，后续可替换为 S3/MinIO。
 
@@ -57,6 +72,17 @@ pnpm dev            # 同时启动 server(:3000) + web(:5173) + desktop
 
 ## 已知限制
 
-- 未实现鉴权：API 目前没有任何身份认证，**不要暴露到公网**。
+- 登录使用固定测试验证码，尚未接入真实短信服务。
 - CI/CD（GitHub Actions）尚未搭建。
 - 桌面端未签名、无自动更新，仅 Windows x64。
+
+## 上传与素材查看验收
+
+1. 启动 PostgreSQL / Redis，运行 `pnpm db:migrate`，确认 FFmpeg 和 FFprobe 可执行，再运行 `pnpm dev:web` 或 `pnpm dev`。
+2. 访问 `/login`，获取测试验证码并以 `123456` 登录。进入“新建”，选择或拖入 MP4 / MOV；首个文件保存后自动进入已保存任务。
+3. 等待素材“处理完成”，点击某秒查看帧图，点击帧图放大并复制时间。最后一秒只显示实际帧数。
+4. 上传中返回列表，可选择继续上传或取消并离开。已保存素材在后台继续处理；任务与素材删除均需确认，失败可重试。
+
+服务端集成测试会生成本地编号视频，覆盖 CFR / VFR、MOV 旋转、HDR、上传幂等、并发首次保存、限额、账号隔离、Range、处理与删除重试。运行前需数据库迁移及 FFmpeg 可用。测试素材和输出存放在忽略的 `storage/` 或 `test-results/`，不会作为源码资源使用。
+
+真实浏览器联调：保持 API 运行，设置 `CEV_E2E_REAL_API=1` 后运行 `pnpm e2e`，会额外验证真实登录 → MOV 上传 → 处理 → 查看帧图 → 刷新恢复 → 删除。测试使用独立随机账号；服务端集成测试使用独立的队列前缀和存储目录，可与本地服务同时运行。测试环境也需要在 PATH 中提供 FFmpeg，或设置 `FFMPEG_PATH`。

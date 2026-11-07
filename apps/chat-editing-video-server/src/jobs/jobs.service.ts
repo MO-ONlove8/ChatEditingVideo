@@ -2,15 +2,16 @@ import {
   Inject,
   Injectable,
   Logger,
+  ConflictException,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import type { Queue } from 'bullmq';
-import { eq } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { CreateEditJobInput, EditJob } from '@cev/shared';
 import { DB, type Database } from '../database/database.module.js';
-import { editJobs, type EditJobRow } from '../database/schema.js';
+import { editJobs, mediaAssets, projects, type EditJobRow } from '../database/schema.js';
 import { ProjectsService } from '../projects/projects.service.js';
 import { EDIT_QUEUE, type EditJobData } from './jobs.constants.js';
 
@@ -50,13 +51,43 @@ export class JobsService {
     });
   }
 
-  async create(input: CreateEditJobInput): Promise<EditJob> {
-    await this.projects.get(input.projectId);
-    const [row] = await this.db
-      .insert(editJobs)
-      .values({ projectId: input.projectId, plan: input.plan })
-      .returning();
-    const job = row!;
+  async create(input: CreateEditJobInput, ownerId: string): Promise<EditJob> {
+    await this.projects.get(input.projectId, ownerId);
+    const job = await this.db.transaction(async (tx) => {
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtext(${`project:${input.projectId}`}))`,
+      );
+      const [project] = await tx
+        .select()
+        .from(projects)
+        .where(
+          and(
+            eq(projects.id, input.projectId),
+            eq(projects.ownerId, ownerId),
+            eq(projects.deleting, false),
+          ),
+        );
+      if (!project) throw new NotFoundException('任务不存在');
+      const sources = [...new Set(input.plan.clips.map((clip) => clip.source))];
+      const assets = await tx
+        .select({ id: mediaAssets.id, status: mediaAssets.status })
+        .from(mediaAssets)
+        .where(
+          and(
+            eq(mediaAssets.projectId, input.projectId),
+            inArray(mediaAssets.id, sources),
+            eq(mediaAssets.deleting, false),
+          ),
+        );
+      if (assets.length !== sources.length) throw new NotFoundException('素材不存在或不属于此任务');
+      if (assets.some((asset) => asset.status !== 'ready'))
+        throw new ConflictException('素材处理完成后才能用于剪辑');
+      const [row] = await tx
+        .insert(editJobs)
+        .values({ projectId: input.projectId, plan: input.plan })
+        .returning();
+      return row!;
+    });
 
     // BullMQ buffers commands while Redis is unreachable; don't let the request hang.
     let timer: NodeJS.Timeout | undefined;
@@ -83,8 +114,13 @@ export class JobsService {
     return toEditJob(job);
   }
 
-  async get(id: string): Promise<EditJob> {
-    const [row] = await this.db.select().from(editJobs).where(eq(editJobs.id, id));
+  async get(id: string, ownerId: string): Promise<EditJob> {
+    const [result] = await this.db
+      .select({ job: editJobs })
+      .from(editJobs)
+      .innerJoin(projects, eq(projects.id, editJobs.projectId))
+      .where(and(eq(editJobs.id, id), eq(projects.ownerId, ownerId), eq(projects.deleting, false)));
+    const row = result?.job;
     if (!row) throw new NotFoundException(`Job ${id} not found`);
     return toEditJob(row);
   }

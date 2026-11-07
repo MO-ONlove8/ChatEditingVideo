@@ -8,6 +8,34 @@
       "when": 1793955089720,
       "tag": "0000_square_manta",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1793973603465,
+      "tag": "0001_pale_silvermane",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794008605642,
+      "tag": "0002_previous_tyrannus",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1794009428341,
+      "tag": "0003_warm_alex_power",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794010751550,
+      "tag": "0004_striped_naoko",
+      "breakpoints": true
     }
   ]
 }

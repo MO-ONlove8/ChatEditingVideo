@@ -14,7 +14,11 @@ export default defineConfig({
     // Browser dev: same-origin /api → NestJS, so no CORS needed in the browser.
     proxy: { '/api': { target: apiTarget, changeOrigin: true } },
   },
-  preview: { port: 4173, strictPort: true },
+  preview: {
+    port: 4173,
+    strictPort: true,
+    proxy: { '/api': { target: apiTarget, changeOrigin: true } },
+  },
   build: { outDir: 'dist', sourcemap: true },
   test: {
     environment: 'jsdom',

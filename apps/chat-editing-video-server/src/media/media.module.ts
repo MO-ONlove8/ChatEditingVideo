@@ -1,18 +1,19 @@
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
-import { BadRequestException, Module } from '@nestjs/common';
+import { BadRequestException, Module, type DynamicModule } from '@nestjs/common';
 import { MulterModule } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { APP_CONFIG } from '../config/config.module.js';
 import type { Env } from '../config/env.js';
-import { ProjectsModule } from '../projects/projects.module.js';
+import { MediaCoreModule } from './media-core.module.js';
 import { StorageService } from '../storage/storage.service.js';
 import { MediaController } from './media.controller.js';
-import { MediaService } from './media.service.js';
+import { MediaFilesController } from './media-files.controller.js';
+import { MediaProcessor } from './media-processing.service.js';
 
 @Module({
   imports: [
-    ProjectsModule,
+    MediaCoreModule,
     MulterModule.registerAsync({
       inject: [APP_CONFIG, StorageService],
       useFactory: (env: Env, storage: StorageService) => {
@@ -23,7 +24,7 @@ import { MediaService } from './media.service.js';
           storage: diskStorage({ destination: tmpDir }),
           limits: { fileSize: env.UPLOAD_MAX_MB * 1024 * 1024, files: 1 },
           fileFilter: (_req, file, cb) => {
-            if (file.mimetype.startsWith('video/') || file.mimetype.startsWith('audio/')) {
+            if (/\.(mp4|mov)$/i.test(file.originalname)) {
               cb(null, true);
             } else {
               cb(new BadRequestException(`Unsupported media type: ${file.mimetype}`), false);
@@ -33,7 +34,10 @@ import { MediaService } from './media.service.js';
       },
     }),
   ],
-  controllers: [MediaController],
-  providers: [MediaService],
+  controllers: [MediaController, MediaFilesController],
 })
-export class MediaModule {}
+export class MediaModule {
+  static forRoot(env: Env): DynamicModule {
+    return { module: MediaModule, providers: env.MEDIA_WORKER_ENABLED ? [MediaProcessor] : [] };
+  }
+}

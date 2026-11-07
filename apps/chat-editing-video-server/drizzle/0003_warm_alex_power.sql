@@ -1,0 +1,1 @@
+ALTER TABLE "media_runs" ADD COLUMN "execution_id" uuid;

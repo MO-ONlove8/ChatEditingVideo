@@ -17,37 +17,43 @@ import {
 } from '@cev/shared';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { ProjectsService } from './projects.service.js';
+import { CurrentSession } from '../auth/auth.guard.js';
+import type { AuthSession } from '../auth/auth.service.js';
 
 @Controller('projects')
 export class ProjectsController {
   constructor(private readonly projects: ProjectsService) {}
 
   @Get()
-  list() {
-    return this.projects.list();
+  list(@CurrentSession() session: AuthSession) {
+    return this.projects.list(session.user.id);
   }
 
   @Get(':id')
-  get(@Param('id', ParseUUIDPipe) id: string) {
-    return this.projects.get(id);
+  get(@Param('id', ParseUUIDPipe) id: string, @CurrentSession() session: AuthSession) {
+    return this.projects.get(id, session.user.id);
   }
 
   @Post()
-  create(@Body(new ZodValidationPipe(CreateProjectSchema)) body: CreateProjectInput) {
-    return this.projects.create(body);
+  create(
+    @Body(new ZodValidationPipe(CreateProjectSchema)) body: CreateProjectInput,
+    @CurrentSession() session: AuthSession,
+  ) {
+    return this.projects.create(body, session.user.id);
   }
 
   @Patch(':id')
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body(new ZodValidationPipe(UpdateProjectSchema)) body: UpdateProjectInput,
+    @CurrentSession() session: AuthSession,
   ) {
-    return this.projects.update(id, body);
+    return this.projects.update(id, body, session.user.id);
   }
 
   @Delete(':id')
   @HttpCode(204)
-  async remove(@Param('id', ParseUUIDPipe) id: string) {
-    await this.projects.remove(id);
+  async remove(@Param('id', ParseUUIDPipe) id: string, @CurrentSession() session: AuthSession) {
+    await this.projects.remove(id, session.user.id);
   }
 }

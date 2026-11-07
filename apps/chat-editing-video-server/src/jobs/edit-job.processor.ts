@@ -1,10 +1,10 @@
 import { Inject, Logger } from '@nestjs/common';
 import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
 import type { Job } from 'bullmq';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import type { JobEvent } from '@cev/shared';
 import { DB, type Database } from '../database/database.module.js';
-import { editJobs } from '../database/schema.js';
+import { editJobs, projects } from '../database/schema.js';
 import { FfmpegServerExecutor } from './executors/ffmpeg-server.executor.js';
 import { JobEventsBus } from './job-events.bus.js';
 import { EDIT_QUEUE, type EditJobData } from './jobs.constants.js';
@@ -38,43 +38,49 @@ export class EditJobProcessor extends WorkerHost {
     const [row] = await this.db.select().from(editJobs).where(eq(editJobs.id, jobId));
     if (!row) throw new Error(`Edit job ${jobId} not found`);
 
-    await this.db
-      .update(editJobs)
-      .set({ status: 'running', progress: 0 })
-      .where(eq(editJobs.id, jobId));
+    return this.db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`project:${row.projectId}`}))`);
+      const [project] = await tx.select().from(projects).where(eq(projects.id, row.projectId));
+      if (!project || project.deleting) return { deleted: true };
 
-    // Persist before publishing so an SSE client that subscribes then reads the DB never misses state.
-    const report = async (event: JobEvent) => {
-      if (event.type === 'progress') {
+      await this.db
+        .update(editJobs)
+        .set({ status: 'running', progress: 0 })
+        .where(eq(editJobs.id, jobId));
+
+      // Persist before publishing so an SSE client that subscribes then reads the DB never misses state.
+      const report = async (event: JobEvent) => {
+        if (event.type === 'progress') {
+          await this.db
+            .update(editJobs)
+            .set({ progress: event.progress })
+            .where(eq(editJobs.id, jobId));
+        }
+        await this.bus.publish(event);
+      };
+
+      try {
+        const { output } = await this.executor.execute({
+          jobId,
+          plan: row.plan,
+          onEvent: (e) =>
+            void report(e).catch((err) => this.logger.warn(`progress report failed: ${err}`)),
+        });
         await this.db
           .update(editJobs)
-          .set({ progress: event.progress })
+          .set({ status: 'succeeded', progress: 100, outputKey: output })
           .where(eq(editJobs.id, jobId));
+        await this.bus.publish({ type: 'completed', jobId, outputKey: output });
+        return { output };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        await this.db
+          .update(editJobs)
+          .set({ status: 'failed', error: message })
+          .where(eq(editJobs.id, jobId));
+        await this.bus.publish({ type: 'failed', jobId, error: message });
+        throw err;
       }
-      await this.bus.publish(event);
-    };
-
-    try {
-      const { output } = await this.executor.execute({
-        jobId,
-        plan: row.plan,
-        onEvent: (e) =>
-          void report(e).catch((err) => this.logger.warn(`progress report failed: ${err}`)),
-      });
-      await this.db
-        .update(editJobs)
-        .set({ status: 'succeeded', progress: 100, outputKey: output })
-        .where(eq(editJobs.id, jobId));
-      await this.bus.publish({ type: 'completed', jobId, outputKey: output });
-      return { output };
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      await this.db
-        .update(editJobs)
-        .set({ status: 'failed', error: message })
-        .where(eq(editJobs.id, jobId));
-      await this.bus.publish({ type: 'failed', jobId, error: message });
-      throw err;
-    }
+    });
   }
 }

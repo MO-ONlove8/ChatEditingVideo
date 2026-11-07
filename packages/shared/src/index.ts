@@ -8,3 +8,5 @@ export * from './api.js';
 export * from './ipc.js';
 export * from './executor.js';
 export * from './sse.js';
+export * from './schemas/auth.js';
+export * from './timecode.js';

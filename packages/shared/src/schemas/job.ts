@@ -17,10 +17,15 @@ export const EditJobSchema = z.object({
 });
 export type EditJob = z.infer<typeof EditJobSchema>;
 
-export const CreateEditJobSchema = z.object({
-  projectId: z.uuid(),
-  plan: EditPlanSchema,
-});
+export const CreateEditJobSchema = z
+  .object({
+    projectId: z.uuid(),
+    plan: EditPlanSchema,
+  })
+  .refine((input) => input.plan.clips.every((clip) => z.uuid().safeParse(clip.source).success), {
+    message: '服务端剪辑方案必须引用已上传的素材 ID',
+    path: ['plan', 'clips'],
+  });
 export type CreateEditJobInput = z.infer<typeof CreateEditJobSchema>;
 
 /** Events streamed over SSE (server) or IPC (desktop) while a job runs. */

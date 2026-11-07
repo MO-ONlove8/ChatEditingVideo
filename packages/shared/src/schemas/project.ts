@@ -6,6 +6,11 @@ export const ProjectSchema = z.object({
   description: z.string().max(2000).nullable(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
+  hasMainVideo: z.boolean().default(false),
+  deletionPending: z.boolean().default(false),
+  mediaCount: z.number().int().nonnegative().default(0),
+  processingCount: z.number().int().nonnegative().default(0),
+  failedCount: z.number().int().nonnegative().default(0),
 });
 export type Project = z.infer<typeof ProjectSchema>;
 

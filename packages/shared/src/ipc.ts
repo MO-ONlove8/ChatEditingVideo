@@ -9,6 +9,13 @@ export const IpcChannels = {
   executorRun: 'executor:run',
   executorCancel: 'executor:cancel',
   executorEvent: 'executor:event',
+  readSession: 'session:read',
+  saveSession: 'session:save',
+  clearSession: 'session:clear',
+  windowAction: 'window:action',
+  setCloseGuard: 'window:set-close-guard',
+  closeRequested: 'window:close-requested',
+  confirmClose: 'window:confirm-close',
 } as const;
 
 export const AppInfoSchema = z.object({
@@ -29,6 +36,13 @@ export const ExecutorCancelRequestSchema = z.object({ jobId: z.string().min(1).m
 
 /** Shape exposed on `window.desktop` by the preload script. */
 export interface DesktopApi {
+  readSession(): Promise<string | null>;
+  saveSession(token: string): Promise<void>;
+  clearSession(): Promise<void>;
+  windowAction(action: 'minimize' | 'maximize' | 'close'): Promise<void>;
+  setCloseGuard(enabled: boolean): Promise<void>;
+  onCloseRequested(listener: () => void): () => void;
+  confirmClose(): Promise<void>;
   getAppInfo(): Promise<AppInfo>;
   pickVideoFiles(): Promise<string[]>;
   runEditPlan(request: ExecutorRunRequest): Promise<{ output: string }>;

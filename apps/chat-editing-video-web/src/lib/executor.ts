@@ -8,8 +8,9 @@ import {
   type ExecutorKind,
   type JobEvent,
 } from '@cev/shared';
-import { api } from './api';
-import { apiBaseUrl, getDesktop } from './runtime';
+import { api, apiFetch } from './api';
+import { getDesktop } from './runtime';
+import { readSseJson } from './sse';
 
 /**
  * Both execution paths behind the same EditExecutor interface (from @cev/shared).
@@ -46,31 +47,27 @@ export function createServerExecutor(projectId: string): EditExecutor {
         body: JSON.stringify({ projectId, plan }),
         signal,
       });
-      return new Promise<ExecuteResult>((resolve, reject) => {
-        const source = new EventSource(`${apiBaseUrl()}${ApiRoutes.jobEvents(job.id)}`);
-        const close = () => source.close();
-        signal?.addEventListener('abort', () => {
-          close();
-          reject(new DOMException('Aborted', 'AbortError'));
-        });
-        source.onmessage = (msg) => {
-          const parsed = JobEventSchema.safeParse(JSON.parse(msg.data as string));
-          if (!parsed.success) return;
+      const controller = new AbortController();
+      const combinedSignal = signal
+        ? AbortSignal.any([signal, controller.signal])
+        : controller.signal;
+      try {
+        const response = await apiFetch(ApiRoutes.jobEvents(job.id), { signal: combinedSignal });
+        for await (const raw of readSseJson(response)) {
+          const parsed = JobEventSchema.safeParse(raw);
+          if (!parsed.success) continue;
           const event: JobEvent = parsed.data;
           onEvent?.(event);
           if (event.type === 'completed') {
-            close();
-            resolve({ output: event.outputKey });
+            return { output: event.outputKey };
           } else if (event.type === 'failed') {
-            close();
-            reject(new Error(event.error));
+            throw new Error(event.error);
           }
-        };
-        source.onerror = () => {
-          // EventSource auto-reconnects; only give up once the stream is closed for good.
-          if (source.readyState === EventSource.CLOSED) reject(new Error('Progress stream closed'));
-        };
-      });
+        }
+        throw new Error('进度连接已中断，请重新查看任务状态');
+      } finally {
+        controller.abort();
+      }
     },
   };
 }

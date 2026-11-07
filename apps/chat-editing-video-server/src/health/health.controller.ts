@@ -6,6 +6,7 @@ import type { Health } from '@cev/shared';
 import { DB, type Database } from '../database/database.module.js';
 import { REDIS, ensureConnected } from '../redis/redis.module.js';
 import { LlmService } from '../llm/llm.service.js';
+import { Public } from '../auth/auth.guard.js';
 
 const TIMEOUT_MS = 1500;
 
@@ -27,6 +28,7 @@ async function probe(fn: () => Promise<unknown>): Promise<'up' | 'down'> {
 }
 
 @Controller('health')
+@Public()
 export class HealthController {
   constructor(
     @Inject(DB) private readonly db: Database,

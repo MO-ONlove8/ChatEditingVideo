@@ -17,6 +17,7 @@ export async function* readSseJson(response: Response): AsyncGenerator<unknown> 
       while (queue.length) yield queue.shift();
     }
   } finally {
+    await reader.cancel().catch(() => {});
     reader.releaseLock();
   }
 }
