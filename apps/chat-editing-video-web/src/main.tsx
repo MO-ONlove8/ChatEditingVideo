@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider } from 'react-router';
 import { initRuntime } from './lib/runtime';
 import { createRouter } from './router';
-import './index.css';
+import './global.less';
 import { restoreSession } from './lib/session';
 
 const queryClient = new QueryClient({

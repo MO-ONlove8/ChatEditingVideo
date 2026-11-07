@@ -24,9 +24,9 @@ test('real login, upload, normalization, frame inspection, reload and deletion',
   await expect(page).toHaveURL(/\/tasks\/[^/]+\/edit$/, { timeout: 20_000 });
   await expect(page.getByRole('button', { name: 'V1 第 1 秒' })).toBeVisible({ timeout: 20_000 });
   await page.getByRole('button', { name: 'V1 第 1 秒' }).scrollIntoViewIfNeeded();
-  await expect(page.locator('.sprite-cell').first()).toHaveCSS('background-image', /blob:/);
+  await expect(page.getByTestId('sprite-cell').first()).toHaveCSS('background-image', /blob:/);
   const spriteSize = await page
-    .locator('.sprite-cell')
+    .getByTestId('sprite-cell')
     .first()
     .evaluate(async (element) => {
       const image = new Image();
@@ -49,7 +49,7 @@ test('real login, upload, normalization, frame inspection, reload and deletion',
   await expect(page.getByRole('button', { name: 'V1 第 1 秒' })).toBeVisible();
   await page.setViewportSize({ width: 960, height: 600 });
   await page.getByRole('button', { name: 'V1 第 1 秒' }).scrollIntoViewIfNeeded();
-  await expect(page.locator('.sprite-cell').first()).toHaveCSS('background-image', /blob:/);
+  await expect(page.getByTestId('sprite-cell').first()).toHaveCSS('background-image', /blob:/);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: test.info().outputPath('live-editor.png'), fullPage: true });
   await page.getByRole('link', { name: '‹ 返回任务列表' }).click();

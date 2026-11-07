@@ -1,0 +1,49 @@
+.dialog {
+  margin: auto;
+  border: 1px solid #cfd4dc;
+  border-radius: 4px;
+  padding: 25px;
+  color: #2e3238;
+  background: #fff;
+  width: min(660px, calc(100vw - 48px));
+  max-height: calc(100dvh - 60px);
+  overflow: auto;
+}
+.dialog::backdrop {
+  background: rgb(30 34 40 / 0.35);
+}
+.dialogHeading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 22px;
+}
+.dialogHeading h2 {
+  margin: 0;
+  font-size: 23px;
+}
+.dialogHeading button {
+  border: 0;
+  color: #7a828f;
+  font-size: 22px;
+  min-height: 25px;
+  padding: 0 4px;
+}
+.dialogBody {
+  font-size: 16px;
+  line-height: 1.8;
+}
+.dialogBody > input {
+  width: 100%;
+  margin-top: 8px;
+}
+.dialogFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: 16px;
+  margin-top: 45px;
+}
+.dialogFooter button {
+  min-width: 110px;
+}

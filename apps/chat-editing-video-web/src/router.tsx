@@ -1,5 +1,6 @@
+import common from './styles/common.module.less';
 import { createBrowserRouter, Link, Navigate, Outlet } from 'react-router';
-import { AppShell } from './AppShell';
+import { AppShell } from './components/AppShell';
 import { LoginPage } from './pages/LoginPage';
 import { TasksPage } from './pages/TasksPage';
 import { EditorPage } from './pages/EditorPage';
@@ -31,7 +32,7 @@ export const routes = [
       {
         path: '*',
         element: (
-          <main className="centered">
+          <main className={common.centered}>
             <h1>页面不存在</h1>
             <Link to="/tasks">返回任务列表</Link>
           </main>

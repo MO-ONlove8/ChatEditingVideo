@@ -69,20 +69,25 @@ test('real model, saved confirmation, authenticated Remotion preview and browser
   await page.getByRole('button', { name: '确认并保存' }).click();
   await expect(card).toContainText('已保存');
   await expect(page.getByRole('button', { name: '播放Clip1', exact: true })).toBeVisible();
-  await expect(page.locator('.preview-panel canvas')).toBeVisible({ timeout: 15000 });
+  await expect(page.getByRole('region', { name: '主视频预览' }).locator('canvas')).toBeVisible({
+    timeout: 15000,
+  });
   await expect
     .poll(
       () =>
-        page.locator('.preview-panel canvas').evaluate((c) => {
-          const canvas = c as HTMLCanvasElement;
-          const data = canvas
-            .getContext('2d')!
-            .getImageData(0, 0, canvas.width, canvas.height).data;
-          let bright = 0;
-          for (let i = 0; i < data.length; i += 400)
-            if (data[i]! > 40 || data[i + 1]! > 40 || data[i + 2]! > 40) bright++;
-          return bright;
-        }),
+        page
+          .getByRole('region', { name: '主视频预览' })
+          .locator('canvas')
+          .evaluate((c) => {
+            const canvas = c as HTMLCanvasElement;
+            const data = canvas
+              .getContext('2d')!
+              .getImageData(0, 0, canvas.width, canvas.height).data;
+            let bright = 0;
+            for (let i = 0; i < data.length; i += 400)
+              if (data[i]! > 40 || data[i + 1]! > 40 || data[i + 2]! > 40) bright++;
+            return bright;
+          }),
       { timeout: 15000 },
     )
     .toBeGreaterThan(20);
@@ -144,7 +149,9 @@ test('app protocol plays protected clips at 960x600 and streams a native save', 
     await expect(page.getByRole('heading', { name: '我的剪辑任务' })).toBeVisible();
     await page.getByRole('link', { name: '继续编辑', exact: true }).click();
     await expect(page).toHaveURL(`app://local/tasks/${projectId}/edit`);
-    await expect(page.locator('.preview-panel canvas')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole('region', { name: '主视频预览' }).locator('canvas')).toBeVisible({
+      timeout: 15000,
+    });
     await expect(page.getByText(/预览加载失败/)).toHaveCount(0);
     await page.getByRole('button', { name: '播放全部', exact: true }).click();
     await expect(page.getByRole('button', { name: '暂停', exact: true })).toBeVisible();

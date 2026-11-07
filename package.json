@@ -30,7 +30,7 @@
       "eslint --fix",
       "prettier --write"
     ],
-    "*.{json,md,yml,yaml,css,html}": "prettier --write"
+    "*.{json,md,yml,yaml,css,less,html}": "prettier --write"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

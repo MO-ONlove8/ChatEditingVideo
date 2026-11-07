@@ -1,0 +1,89 @@
+.chatPanel {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.chatPanel > h2 {
+  margin-bottom: 4px;
+  font-size: 15px;
+}
+.subtitle {
+  font-size: 11px;
+  border-bottom: 1px solid #eceef0;
+  padding-bottom: 16px;
+}
+.chatEmpty {
+  padding-top: 12px;
+  font-size: 12px;
+}
+.hint {
+  font-size: 11px;
+}
+.example {
+  padding: 14px 12px;
+  border-radius: 2px;
+  color: #7a828f;
+}
+.chatComposer {
+  margin-top: auto;
+  padding-top: 12px;
+  flex-shrink: 0;
+}
+.chatComposer textarea {
+  width: 100%;
+  height: 100px;
+  font-size: 12px;
+  resize: none;
+  margin-bottom: 10px;
+}
+.chatComposer button {
+  font-size: 11px;
+  padding: 3px 12px;
+  min-height: 26px;
+}
+.chatHistory {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 0;
+}
+.chatTurn {
+  padding: 8px 0;
+  border-bottom: 1px solid #eee;
+  overflow-wrap: anywhere;
+}
+.chatUser {
+  background: #eceef0;
+  padding: 12px;
+  white-space: pre-wrap;
+  border-radius: 3px;
+}
+.proposalCard {
+  padding: 14px;
+  border: 1px solid #ccc;
+  background: #fff;
+}
+.proposalCard > span {
+  margin-left: 10px;
+}
+.proposalCard dl {
+  display: grid;
+  grid-template-columns: 70px 1fr;
+  gap: 12px;
+  font-size: 13px;
+}
+.proposalCard dt {
+  color: #777;
+}
+.proposalCard dd {
+  margin: 0;
+}
+.proposalActions {
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+.proposalCard > button {
+  width: 100%;
+}

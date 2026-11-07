@@ -1,0 +1,30 @@
+.editorPage {
+  padding: 20px 24px;
+  min-height: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.editorHeading {
+  margin-bottom: 20px;
+  min-height: 36px;
+  flex-shrink: 0;
+}
+.editorHeading h1 {
+  font-size: 20px;
+  max-width: 35%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin: 0 8px 0 16px;
+}
+.editorHeading button {
+  font-size: 12px;
+  min-height: 30px;
+  padding: 4px 12px;
+}
+@media (max-width: 1100px) {
+  .editorPage {
+    padding: 16px;
+  }
+}

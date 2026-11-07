@@ -1,0 +1,30 @@
+.exportControl {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+  max-width: 360px;
+}
+.exportStatus {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+  font-size: 12px;
+}
+.exportStatus progress {
+  width: 160px;
+  accent-color: #555;
+}
+.exportControl.compact {
+  align-items: flex-start;
+  max-width: 190px;
+}
+.exportControl.compact > button {
+  background: none;
+  border: 0;
+  padding: 0;
+}
+.exportControl small {
+  font-size: 11px;
+}
