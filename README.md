@@ -70,10 +70,31 @@ FFmpeg 生成 H.264 / yuv420p、30 fps、最长边不超过 1920 的 MP4，AAC 4
 
 **桌面端安全**：`contextIsolation` + `sandbox`、无 Node 集成、自定义 `app://` 协议带 CSP、IPC 只接受自家页面调用且参数经 zod 校验。
 
+## 持续集成（CI）
+
+工作流位于 `.github/workflows/ci.yml`。PR 创建或更新、推送到 `dev` / `main` / `master` 时自动运行，也可在 GitHub 的 Actions → CI 页面手动运行；同一 PR 或分支的新运行会取消旧运行。
+
+| 检查名称               | 环境                    | 内容                                                         |
+| ---------------------- | ----------------------- | ------------------------------------------------------------ |
+| `Quality and build`    | Ubuntu 24.04            | Prettier、类型检查、ESLint、单元/组件测试、全仓构建          |
+| `Server integration`   | Ubuntu 24.04            | 空库迁移、PostgreSQL 17、Redis 7、真实 FFmpeg 素材处理与导出 |
+| `Web E2E`              | Ubuntu 24.04 + Chromium | mock API 的 Web、素材界面和开发状态预览                      |
+| `Windows Electron E2E` | Windows Server 2022     | 构建后的 Electron 应用、登录和桌面交互                       |
+
+Node 版本读取 `.nvmrc`，pnpm 版本读取 `package.json` 的 `packageManager`，依赖通过 `pnpm install --frozen-lockfile` 安装。仅缓存 pnpm 下载目录，Turbo 命令使用 `--force` 确保实际执行检查。Ubuntu 从发行版软件源安装 FFmpeg 6.1 系列及字体，并检查 libx264 / AAC、drawtext / zscale / tonemap 和旋转参数；具体补丁版本打印在日志中，随 Ubuntu 安全更新变化。
+
+CI 使用 runner 自己的临时数据库、Redis 和文件目录，不需要配置 GitHub Secrets 或复制本地 `.env`，不会连接开发数据库。常规检查不启动 API 常驻服务或 Ollama；剪辑集成测试使用固定模型响应，视频处理与导出仍运行真实 FFmpeg。真实模型、真实 API 的浏览器与 Electron 全链路验收继续按下文在本地执行；仅 `CEV_E2E_REAL_API=1` 会启用这部分测试，`0` 不会启用。
+
+端到端测试失败时上传 HTML 报告、trace、截图和测试输出，服务端集成测试上传 JUnit 结果，保留 7 天。可从失败运行的 Artifacts 下载，在本地通过 `pnpm --filter @cev/e2e exec playwright show-report <报告目录>` 或 `pnpm --filter @cev/e2e exec playwright show-trace <trace.zip>` 查看。安装依赖或构建阶段失败时可能尚未生成报告，需查看对应步骤日志。
+
+工作流进入远端并成功运行后，在 GitHub Settings → Rules → Rulesets（或 Branches → Branch protection）为需要保护的分支启用 PR 合并和必需状态检查，选择上表四个检查名称。此设置需要仓库管理权限，仓库与账号计划也需支持对应规则；仅添加 YAML 不会自动阻止检查失败的合并。
+
+工作流只验证代码，不打安装包、不签名、不创建 Release、不推送或部署。以后更新 Actions 时需重新核对完整提交 SHA；Node / pnpm / Playwright / FFmpeg 升级后需检查 runner 兼容性。
+
 ## 已知限制
 
 - 登录使用固定测试验证码，尚未接入真实短信服务。
-- CI/CD（GitHub Actions）尚未搭建。
+- CI 使用 GitHub Actions；尚未配置自动部署和安装包发布。
 - 桌面端未签名、无自动更新，仅 Windows x64。
 
 ## 上传与素材查看验收

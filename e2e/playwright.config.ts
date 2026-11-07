@@ -7,10 +7,11 @@ import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
   testDir: './tests',
   fullyParallel: false,
+  workers: process.env.CI ? 1 : undefined,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   reporter: [['list'], ['html', { open: 'never' }]],
-  use: { trace: 'retain-on-failure' },
+  use: { trace: 'retain-on-failure', screenshot: 'only-on-failure' },
   projects: [
     {
       name: 'web',
@@ -26,7 +27,7 @@ export default defineConfig({
       testMatch: /states\.spec\.ts/,
       use: { ...devices['Desktop Chrome'], baseURL: 'http://127.0.0.1:5190' },
     },
-    ...(process.env.CEV_E2E_REAL_API
+    ...(process.env.CEV_E2E_REAL_API === '1'
       ? [
           {
             name: 'media-live',

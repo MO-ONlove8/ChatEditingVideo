@@ -1,0 +1,157 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [dev, main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: 'true'
+  HUSKY: '0'
+  TURBO_TELEMETRY_DISABLED: '1'
+
+jobs:
+  quality:
+    name: Quality and build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-node
+      - name: Check formatting
+        run: pnpm format:check
+      - name: Check types
+        run: pnpm run typecheck --force
+      - name: Lint
+        run: pnpm run lint --force
+      - name: Run unit and component tests
+        run: pnpm run test --force
+      - name: Build all packages
+        run: pnpm run build --force
+
+  integration:
+    name: Server integration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgres://cev:cev@127.0.0.1:5432/cev_ci
+      REDIS_URL: redis://127.0.0.1:6379
+      QUEUE_PREFIX: ci
+      STORAGE_DIR: ./storage/ci
+      FFMPEG_PATH: ffmpeg
+      FFPROBE_PATH: ffprobe
+      MEDIA_THREADS: '2'
+      # Integration tests substitute editing responses; health may report LLM down.
+      LLM_BASE_URL: http://127.0.0.1:9/v1
+      LLM_API_KEY: ci-placeholder
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: cev
+          POSTGRES_PASSWORD: cev
+          POSTGRES_DB: cev_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cev -d cev_ci"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-node
+      - uses: ./.github/actions/setup-media
+      - name: Build shared contracts
+        run: pnpm exec turbo run build --filter=@cev/shared --force
+      - name: Apply migrations to the empty CI database
+        run: pnpm db:migrate
+      - name: Run real database, queue and FFmpeg tests
+        run: >-
+          pnpm --filter @cev/server test:integration
+          --reporter=default --reporter=junit --outputFile.junit=test-results/integration.xml
+      - name: Upload integration results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: server-integration-results
+          path: apps/chat-editing-video-server/test-results/integration.xml
+          if-no-files-found: ignore
+          retention-days: 7
+
+  web:
+    name: Web E2E
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-node
+      - uses: ./.github/actions/setup-media
+      - name: Install Chromium and system dependencies
+        run: pnpm --filter @cev/e2e exec playwright install --with-deps chromium
+      - name: Build Web and shared contracts
+        run: pnpm exec turbo run build --filter=@cev/web --force
+      - name: Run Web and state preview tests
+        run: pnpm --filter @cev/e2e exec playwright test --project=web --project=states
+      - name: Upload Web failure reports
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: web-e2e-failure
+          path: |
+            e2e/playwright-report/
+            e2e/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  desktop:
+    name: Windows Electron E2E
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-node
+      - name: Build Web, Electron and shared contracts
+        run: pnpm exec turbo run build --filter=@cev/web --filter=@cev/desktop --force
+      - name: Run Windows Electron tests
+        run: pnpm --filter @cev/e2e e2e:desktop
+      - name: Upload Electron failure reports
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: windows-electron-e2e-failure
+          path: |
+            e2e/playwright-report/
+            e2e/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
