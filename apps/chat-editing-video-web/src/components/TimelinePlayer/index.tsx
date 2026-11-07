@@ -107,7 +107,9 @@ export function TimelinePlayer({
           </div>
         )}
       />
-      {buffering && <small role="status">正在缓冲…</small>}
+      <small role="status" style={{ visibility: buffering ? 'visible' : 'hidden' }}>
+        正在缓冲…
+      </small>
       <input
         aria-label="播放进度"
         type="range"

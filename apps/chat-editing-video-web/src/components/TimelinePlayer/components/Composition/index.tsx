@@ -5,9 +5,9 @@ import { AbsoluteFill, Internals, Sequence } from 'remotion';
 import { clipFrames, type FrameClip } from '@cev/shared';
 import { apiBaseUrl } from '../../../../lib/runtime';
 
-type CompositionProps = { clips: FrameClip[]; token: string };
+type CompositionProps = { clips: FrameClip[]; token: string; onError?: (error: Error) => void };
 
-export function Composition({ clips, token }: CompositionProps) {
+export function Composition({ clips, token, onError }: CompositionProps) {
   // Remotion 4.0.541 otherwise uses its process-wide media cache. Scope decoded
   // frames, audio and authenticated fetches to this composition's lifetime.
   const [resources] = useState(() => Internals.makeRenderResourceManager());
@@ -37,6 +37,16 @@ export function Composition({ clips, token }: CompositionProps) {
                   trimBefore={c.startFrame}
                   durationInFrames={clipFrames(c)}
                   disallowFallbackToOffthreadVideo
+                  onError={
+                    onError
+                      ? (error) => {
+                          onError(error);
+                          // Let the host unmount a failed player instead of throwing from
+                          // an async decoder callback. Native fallback stays disabled.
+                          return 'fallback';
+                        }
+                      : undefined
+                  }
                   objectFit="contain"
                   className={styles.video}
                 />

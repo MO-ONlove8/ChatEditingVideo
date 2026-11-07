@@ -14,7 +14,7 @@ import { Notice } from '../../../../../../../../components/Notice';
 import { FramePreview } from '../../../../../../../../components/FramePreview';
 import { MediaProcessingState } from '../../../../../../../../components/MediaProcessingState';
 import { useBlob } from '../../hooks/useBlob';
-import { ThumbnailPage } from './components/ThumbnailPage';
+import { AssetScrubber } from './components/AssetScrubber';
 import { FrameImage } from './components/FrameImage';
 import styles from './index.module.less';
 import common from '../../../../../../../../styles/common.module.less';
@@ -84,11 +84,7 @@ export function AssetRow({ asset }: { asset: MediaAsset }) {
         </>
       ) : (
         <>
-          <div className={styles.secondsStrip} aria-label={`V${asset.number} 逐秒缩略图`}>
-            {Array.from({ length: Math.ceil(asset.normalized!.frameCount! / 900) }, (_, page) => (
-              <ThumbnailPage key={page} asset={asset} page={page} onSelect={setSecond} />
-            ))}
-          </div>
+          <AssetScrubber asset={asset} onSelect={setSecond} />
           {second !== undefined && (
             <div className={styles.expandedFrames}>
               <div className={`${common.row} ${common.between}`}>

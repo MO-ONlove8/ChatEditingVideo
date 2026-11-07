@@ -128,6 +128,22 @@ async function install(page: Page, failImages = false) {
       endpoint.endsWith('/image')
     )
       return route.fulfill({ contentType: 'image/png', body: pixel });
+    if (/^\/media\/[^/]+\/content$/.test(endpoint)) {
+      expect(req.headers()['authorization']).toBe(`Bearer ${token}`);
+      const video = await readFile(file);
+      const range = /^bytes=(\d+)-(\d*)$/.exec(req.headers()['range'] ?? '');
+      const start = range ? Number(range[1]) : 0;
+      const end = range?.[2] ? Math.min(Number(range[2]), video.length - 1) : video.length - 1;
+      return route.fulfill({
+        status: range ? 206 : 200,
+        contentType: 'video/mp4',
+        headers: {
+          'accept-ranges': 'bytes',
+          ...(range ? { 'content-range': `bytes ${start}-${end}/${video.length}` } : {}),
+        },
+        body: video.subarray(start, end + 1),
+      });
+    }
     return route.fulfill({ status: 404, json: { message: 'Not found' } });
   });
   return {
@@ -198,6 +214,107 @@ test('uploads actual files, transitions to saved editor during a batch, and open
   await page.setViewportSize({ width: 960, height: 600 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: test.info().outputPath('media-minimum.png'), fullPage: true });
+});
+
+test('drags source thumbnails under a fixed center playhead, pauses on release and preserves frame inspection', async ({
+  page,
+}) => {
+  const api = await install(page);
+  await page.goto('/tasks/new');
+  await page.getByLabel('选择视频素材').setInputFiles(file);
+  await expect.poll(() => api.pending.length).toBe(1);
+  await api.save(0);
+  const slider = page.getByRole('slider', { name: 'V1 素材播放位置' });
+  const strip = page.getByLabel('V1 逐秒缩略图');
+  await slider.scrollIntoViewIfNeeded();
+  const bounds = (await strip.boundingBox())!;
+  const center = bounds.x + bounds.width / 2;
+  const playheadCenter = async () => {
+    const box = (await slider.boundingBox())!;
+    return box.x + box.width / 2;
+  };
+  expect(await playheadCenter()).toBeCloseTo(center, 0);
+  const firstThumbnail = page.getByRole('button', { name: 'V1 第 0 秒', exact: true });
+  expect((await firstThumbnail.boundingBox())!.x).toBeCloseTo(center, 0);
+  await page.mouse.move(center + 100, bounds.y + 40);
+  await page.mouse.down();
+  await page.mouse.move(center + 20, bounds.y + 40, { steps: 8 });
+  await page.mouse.up();
+  await expect(slider).toHaveAttribute('aria-valuenow', '15');
+  expect(await playheadCenter()).toBeCloseTo(center, 0);
+  expect((await firstThumbnail.boundingBox())!.x).toBeCloseTo(center - 80, 0);
+  const preview = page.getByRole('region', { name: 'V1 素材预览' });
+  await expect(preview).toBeVisible();
+  await expect(preview.locator('canvas')).toBeVisible();
+  await expect(preview.getByRole('button', { name: '播放素材预览' })).toBeVisible();
+  await expect(page.getByText('第 0 秒 · 帧编号')).not.toBeVisible();
+  const popup = (await preview.boundingBox())!;
+  expect(popup.width).toBeGreaterThanOrEqual(340);
+  expect(popup.y + popup.height).toBeLessThanOrEqual(bounds.y - 8);
+  expect(popup.x + popup.width / 2).toBeCloseTo(center, 0);
+  await page.waitForTimeout(150);
+  await expect(slider).toHaveAttribute('aria-valuenow', '15');
+  await page.getByRole('button', { name: '播放素材预览' }).click();
+  await expect.poll(() => slider.getAttribute('aria-valuenow')).not.toBe('15');
+  expect(await playheadCenter()).toBeCloseTo(center, 0);
+  // Dragging during playback pauses and can reach either boundary without moving the line.
+  await page.mouse.move(center + 100, bounds.y + 40);
+  await page.mouse.down();
+  await page.mouse.move(center - 200, bounds.y + 40, { steps: 8 });
+  await page.mouse.up();
+  await expect(slider).toHaveAttribute('aria-valuenow', '35');
+  await expect(preview.getByRole('button', { name: '播放素材预览' })).toBeVisible();
+  const lastThumbnail = page.getByRole('button', { name: 'V1 第 1 秒', exact: true });
+  const lastBox = (await lastThumbnail.boundingBox())!;
+  expect(lastBox.x + lastBox.width).toBeLessThan(bounds.x + bounds.width - 100);
+  await page.mouse.move(center - 200, bounds.y + 40);
+  await page.mouse.down();
+  await page.mouse.move(center + 100, bounds.y + 40, { steps: 8 });
+  await page.mouse.up();
+  await expect(slider).toHaveAttribute('aria-valuenow', '0');
+  expect(await playheadCenter()).toBeCloseTo(center, 0);
+  expect((await firstThumbnail.boundingBox())!.x).toBeCloseTo(center, 0);
+  await page.getByRole('button', { name: '关闭素材预览' }).click();
+  await expect(preview).not.toBeVisible();
+  await slider.focus();
+  await slider.press('End');
+  await expect(slider).toHaveAttribute('aria-valuenow', '35');
+  await expect(preview).toContainText('00:01:05');
+  expect(await playheadCenter()).toBeCloseTo(center, 0);
+  await page.keyboard.press('Escape');
+  await expect(preview).not.toBeVisible();
+  await page.getByRole('button', { name: 'V1 第 1 秒' }).click();
+  await expect(page.getByText('第 1 秒 · 帧编号 0～5')).toBeVisible();
+  await page.getByRole('button', { name: '放大第 5 帧', exact: true }).click();
+  await expect(page.getByRole('dialog')).toContainText('00:01:05');
+});
+
+test('retries failed source playback and closes the previous source preview', async ({ page }) => {
+  const api = await install(page);
+  let fail = true;
+  await page.route('**/api/media/*/content**', (route) =>
+    fail
+      ? route.fulfill({ status: 503, json: { message: 'Preview unavailable' } })
+      : route.fallback(),
+  );
+  await page.goto('/tasks/new');
+  await page.getByLabel('选择视频素材').setInputFiles([file, file]);
+  await expect.poll(() => api.pending.length).toBe(2);
+  await api.save(0);
+  await api.save(1);
+  await page.getByRole('button', { name: '播放素材 V1' }).click();
+  const first = page.getByRole('region', { name: 'V1 素材预览' });
+  await expect(first.getByRole('button', { name: '重试预览' })).toBeVisible();
+  fail = false;
+  await first.getByRole('button', { name: '重试预览' }).click();
+  await expect(first.locator('canvas')).toBeVisible();
+  await expect(first.getByRole('alert')).not.toBeVisible();
+  await page.getByRole('button', { name: '播放素材 V2' }).click();
+  await expect(first).not.toBeVisible();
+  const second = page.getByRole('region', { name: 'V2 素材预览' });
+  await expect(second.locator('canvas')).toBeVisible();
+  await second.getByRole('button', { name: '关闭素材预览' }).click();
+  await expect(second).not.toBeVisible();
 });
 
 test('cancel and leave aborts pending transfers without creating an empty task', async ({

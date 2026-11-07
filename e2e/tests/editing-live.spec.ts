@@ -53,6 +53,50 @@ test('real model, saved confirmation, authenticated Remotion preview and browser
   await expect(page).toHaveURL(/\/tasks\/[^/]+\/edit$/, { timeout: 20000 });
   projectId = new URL(page.url()).pathname.split('/')[2]!;
   await expect(page.getByRole('button', { name: 'V1 第 1 秒' })).toBeVisible({ timeout: 20000 });
+  const sourceSlider = page.getByRole('slider', { name: 'V1 素材播放位置' });
+  await sourceSlider.scrollIntoViewIfNeeded();
+  await sourceSlider.focus();
+  await sourceSlider.press('End');
+  await expect(sourceSlider).toHaveAttribute('aria-valuenow', '299');
+  await expect(sourceSlider).toBeInViewport();
+  const sourcePreview = page.getByRole('region', { name: 'V1 素材预览' });
+  await expect(sourcePreview.locator('canvas')).toBeVisible({ timeout: 15000 });
+  const canvasPixel = () =>
+    sourcePreview.locator('canvas').evaluate((canvas) => {
+      const ctx = (canvas as HTMLCanvasElement).getContext('2d')!;
+      const data = ctx.getImageData(
+        0,
+        0,
+        (canvas as HTMLCanvasElement).width,
+        (canvas as HTMLCanvasElement).height,
+      ).data;
+      let hash = 0;
+      for (let i = 0; i < data.length; i++)
+        if (i % 4 !== 3) hash = (Math.imul(hash, 31) + data[i]!) | 0;
+      return hash;
+    });
+  await expect.poll(canvasPixel).not.toBe(0);
+  const lastPixel = await canvasPixel();
+  await sourceSlider.press('Home');
+  await expect(sourceSlider).toHaveAttribute('aria-valuenow', '0');
+  await expect(sourceSlider).toBeInViewport();
+  await expect.poll(canvasPixel).not.toEqual(lastPixel);
+  const sourceStrip = page.getByLabel('V1 逐秒缩略图');
+  const stripBounds = (await sourceStrip.boundingBox())!;
+  const sourceCenter = stripBounds.x + stripBounds.width / 2;
+  await page.mouse.move(stripBounds.x + stripBounds.width - 20, stripBounds.y + 35);
+  await page.mouse.down();
+  await page.mouse.move(stripBounds.x + 20, stripBounds.y + 35, { steps: 12 });
+  await expect.poll(() => sourceStrip.evaluate((el) => el.scrollLeft)).toBeGreaterThan(100);
+  await page.mouse.up();
+  const lineBounds = (await sourceSlider.boundingBox())!;
+  expect(lineBounds.x + lineBounds.width / 2).toBeCloseTo(sourceCenter, 0);
+  const selectedFrame = await sourceSlider.getAttribute('aria-valuenow');
+  await expect(sourcePreview.getByRole('button', { name: '播放素材预览' })).toBeVisible();
+  await page.waitForTimeout(150);
+  await expect(sourceSlider).toHaveAttribute('aria-valuenow', selectedFrame!);
+  await page.screenshot({ path: test.info().outputPath('source-preview.png'), fullPage: true });
+  await sourcePreview.getByRole('button', { name: '关闭素材预览' }).click();
   await page.getByLabel('输入剪辑指令').fill('把V1的第5秒到第8秒追加到主视频末尾');
   await page.getByRole('button', { name: '发送', exact: true }).click();
   const card = page.getByLabel('剪辑确认卡');
@@ -92,6 +136,15 @@ test('real model, saved confirmation, authenticated Remotion preview and browser
     )
     .toBeGreaterThan(20);
   await page.getByRole('button', { name: '播放全部', exact: true }).click();
+  await expect(page.getByRole('button', { name: '暂停', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '暂停', exact: true }).click();
+  const timelineHead = page.getByRole('slider', { name: '时间轴播放位置' });
+  await timelineHead.scrollIntoViewIfNeeded();
+  const timelineBox = (await timelineHead.locator('..').boundingBox())!;
+  await page.mouse.move(timelineBox.x + (timelineBox.width * 45) / 91, timelineBox.y + 50);
+  await page.mouse.down();
+  await expect(page.getByRole('slider', { name: '播放进度', exact: true })).toHaveValue('45');
+  await page.mouse.up();
   await expect(page.getByRole('button', { name: '暂停', exact: true })).toBeVisible();
   await page.getByRole('button', { name: '暂停', exact: true }).click();
   await page.screenshot({ path: test.info().outputPath('editing-workspace.png'), fullPage: true });
@@ -136,6 +189,8 @@ test('app protocol plays protected clips at 960x600 and streams a native save', 
   try {
     await app.context().tracing.start({ screenshots: true, snapshots: true });
     const page = await app.firstWindow();
+    // Let the initial loadURL finish before reloading with the test session.
+    await page.waitForLoadState('load');
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (message) => {
@@ -157,6 +212,33 @@ test('app protocol plays protected clips at 960x600 and streams a native save', 
     await expect(page.getByRole('button', { name: '暂停', exact: true })).toBeVisible();
     await page.getByRole('button', { name: '暂停', exact: true }).click();
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setSize(960, 600));
+    const sourceSlider = page.getByRole('slider', { name: 'V1 素材播放位置' });
+    await sourceSlider.scrollIntoViewIfNeeded();
+    await sourceSlider.focus();
+    await sourceSlider.press('ArrowRight');
+    const sourcePreview = page.getByRole('region', { name: 'V1 素材预览' });
+    await expect(sourcePreview.locator('canvas')).toBeVisible({ timeout: 15000 });
+    const previewBounds = (await sourcePreview.boundingBox())!;
+    expect(previewBounds.x).toBeGreaterThanOrEqual(0);
+    expect(previewBounds.x + previewBounds.width).toBeLessThanOrEqual(960);
+    await page.screenshot({
+      path: test.info().outputPath('source-preview-desktop.png'),
+      fullPage: true,
+    });
+    await sourcePreview.getByRole('button', { name: '关闭素材预览' }).click();
+    const timelineHead = page.getByRole('slider', { name: '时间轴播放位置' });
+    await timelineHead.scrollIntoViewIfNeeded();
+    const timelineBox = (await timelineHead.locator('..').boundingBox())!;
+    await page.mouse.move(timelineBox.x + (timelineBox.width * 30) / 91, timelineBox.y + 50);
+    await page.mouse.down();
+    await expect(page.getByRole('slider', { name: '播放进度', exact: true })).toHaveValue('30');
+    await page.mouse.move(timelineBox.x + (timelineBox.width * 60) / 91, timelineBox.y + 50, {
+      steps: 8,
+    });
+    await expect(page.getByRole('slider', { name: '播放进度', exact: true })).toHaveValue('60');
+    await page.mouse.up();
+    await expect(page.getByRole('button', { name: '暂停', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: '暂停', exact: true }).click();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,
     );
