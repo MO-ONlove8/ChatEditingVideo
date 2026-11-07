@@ -126,8 +126,14 @@ export class MediaFilesController {
     @CurrentSession() session: AuthSession,
     @Req() req: Request,
     @Res() res: Response,
+    @Query('generation') generation?: string,
   ) {
     const asset = await this.media.get(id, session.user.id);
+    if (
+      generation !== undefined &&
+      (!/^\d+$/.test(generation) || Number(generation) !== asset.generation)
+    )
+      throw new BadRequestException('素材处理版本已变化，请刷新后重试');
     if (asset.status !== 'ready' || !asset.normalizedKey)
       throw new BadRequestException('素材尚未处理完成');
     await this.send(asset.normalizedKey, 'video/mp4', req, res, session);

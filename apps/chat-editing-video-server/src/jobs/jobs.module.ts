@@ -8,13 +8,14 @@ import { JobEventsBus } from './job-events.bus.js';
 import { EDIT_QUEUE } from './jobs.constants.js';
 import { JobsController } from './jobs.controller.js';
 import { JobsService } from './jobs.service.js';
+import { EditingModule } from '../editing/editing.module.js';
 
 @Module({})
 export class JobsModule {
   static forRoot(env: Env): DynamicModule {
     return {
       module: JobsModule,
-      imports: [ProjectsModule, BullModule.registerQueue({ name: EDIT_QUEUE })],
+      imports: [ProjectsModule, EditingModule, BullModule.registerQueue({ name: EDIT_QUEUE })],
       controllers: [JobsController],
       providers: [
         JobsService,

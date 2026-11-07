@@ -36,6 +36,20 @@
       "when": 1794010751550,
       "tag": "0004_striped_naoko",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1794016896174,
+      "tag": "0005_remarkable_bedlam",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794017646347,
+      "tag": "0006_dark_freak",
+      "breakpoints": true
     }
   ]
 }

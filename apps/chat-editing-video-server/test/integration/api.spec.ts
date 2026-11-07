@@ -21,6 +21,7 @@ import {
   projects,
   sessions,
   users,
+  timelines,
 } from '../../src/database/schema.js';
 import { ProjectsService } from '../../src/projects/projects.service.js';
 import { StorageService } from '../../src/storage/storage.service.js';
@@ -271,19 +272,30 @@ describe('authenticated API integration', () => {
       .set(auth(b.token))
       .attach('file', Buffer.from('x'), { filename: 'x.mp4', contentType: 'video/mp4' })
       .expect(404);
-    const plan = (source: string) => ({
-      projectId: aId,
-      plan: { version: 1, clips: [{ source, startSec: 0, endSec: 1 }] },
-    });
+    // Clients cannot submit arbitrary media plans; generation uses server-owned timeline state.
     await request(app.getHttpServer())
       .post('/api/jobs')
       .set(auth(a.token))
-      .send(plan(bAsset.id))
-      .expect(404);
+      .send({
+        projectId: aId,
+        plan: { version: 1, clips: [{ source: bAsset.id, startSec: 0, endSec: 1 }] },
+      })
+      .expect(400);
+    await db.insert(timelines).values({
+      projectId: aId,
+      state: {
+        revision: 1,
+        fps: 30,
+        canvas: { width: 320, height: 180 },
+        clips: [
+          { id: randomUUID(), source: aAsset.id, generation: 1, startFrame: 0, endFrame: 29 },
+        ],
+      },
+    });
     const job = await request(app.getHttpServer())
       .post('/api/jobs')
       .set(auth(a.token))
-      .send(plan(aAsset.id))
+      .send({ projectId: aId, expectedRevision: 1, requestId: randomUUID() })
       .expect(201);
     await request(app.getHttpServer())
       .get(`/api/jobs/${job.body.id}`)
@@ -335,13 +347,19 @@ describe('authenticated API integration', () => {
     const projectId = await createProject(account);
     const asset = await upload(account.token, projectId);
     await waitAsset(account.token, projectId, asset.id);
+    await db.insert(timelines).values({
+      projectId,
+      state: {
+        revision: 1,
+        fps: 30,
+        canvas: { width: 320, height: 180 },
+        clips: [{ id: randomUUID(), source: asset.id, generation: 1, startFrame: 0, endFrame: 29 }],
+      },
+    });
     const job = await request(app.getHttpServer())
       .post('/api/jobs')
       .set(auth(account.token))
-      .send({
-        projectId,
-        plan: { version: 1, clips: [{ source: asset.id, startSec: 0, endSec: 1 }] },
-      })
+      .send({ projectId, expectedRevision: 1, requestId: randomUUID() })
       .expect(201);
     await request(app.getHttpServer())
       .post('/api/auth/logout')
@@ -353,7 +371,7 @@ describe('authenticated API integration', () => {
           const [row] = await db.select().from(editJobs).where(eq(editJobs.id, job.body.id));
           return row?.status;
         },
-        { timeout: 6000, interval: 150 },
+        { timeout: 15000, interval: 150 },
       )
       .toBe('succeeded');
     await db

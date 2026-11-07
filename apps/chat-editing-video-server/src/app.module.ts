@@ -13,6 +13,7 @@ import { RedisModule } from './redis/redis.module.js';
 import { redisOptionsFromUrl } from './redis/redis-options.js';
 import { StorageModule } from './storage/storage.module.js';
 import { AuthModule } from './auth/auth.module.js';
+import { EditingModule } from './editing/editing.module.js';
 
 /** BullMQ 6 has its own RedisOptions type; workers require maxRetriesPerRequest: null. */
 function bullConnection(url: string) {
@@ -50,6 +51,7 @@ export class AppModule {
         LlmModule,
         HealthModule,
         ProjectsModule,
+        EditingModule,
         MediaModule.forRoot(env),
         JobsModule.forRoot(env),
       ],

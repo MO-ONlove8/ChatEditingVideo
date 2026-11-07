@@ -134,6 +134,22 @@ export class AuthService {
       .where(and(eq(sessions.id, session.id), isNull(sessions.revokedReason)));
     void this.notify(session.id, 'SESSION_LOGGED_OUT');
   }
+  async authenticateId(id: string): Promise<AuthSession> {
+    const [row] = await this.db
+      .select({ session: sessions, user: users })
+      .from(sessions)
+      .innerJoin(users, eq(sessions.userId, users.id))
+      .where(eq(sessions.id, id));
+    if (!row) authError('SESSION_INVALID');
+    if (row.session.revokedReason) authError(row.session.revokedReason as SessionEndCode);
+    if (row.session.expiresAt.getTime() <= Date.now()) authError('SESSION_EXPIRED');
+    return {
+      id: row.session.id,
+      token: '',
+      user: { id: row.user.id, phone: row.user.phone },
+      expiresAt: row.session.expiresAt.toISOString(),
+    };
+  }
 
   /** Watches long-lived HTTP streams too, so a revoked token cannot keep receiving data. */
   watch(session: AuthSession, ended: (code: SessionEndCode) => void): () => void {
@@ -153,7 +169,8 @@ export class AuthService {
       if (closed || checking) return;
       checking = true;
       try {
-        await this.authenticate(session.token);
+        if (session.token) await this.authenticate(session.token);
+        else await this.authenticateId(session.id);
       } catch (error) {
         if (error instanceof UnauthorizedException) {
           finish((error.getResponse() as { code: SessionEndCode }).code);

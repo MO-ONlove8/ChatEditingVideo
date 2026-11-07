@@ -16,6 +16,8 @@ export const IpcChannels = {
   setCloseGuard: 'window:set-close-guard',
   closeRequested: 'window:close-requested',
   confirmClose: 'window:confirm-close',
+  downloadRender: 'render:download',
+  cancelRenderDownload: 'render:cancel-download',
 } as const;
 
 export const AppInfoSchema = z.object({
@@ -36,6 +38,8 @@ export const ExecutorCancelRequestSchema = z.object({ jobId: z.string().min(1).m
 
 /** Shape exposed on `window.desktop` by the preload script. */
 export interface DesktopApi {
+  downloadRender(jobId: string): Promise<{ cancelled: boolean }>;
+  cancelRenderDownload(jobId: string): Promise<void>;
   readSession(): Promise<string | null>;
   saveSession(token: string): Promise<void>;
   clearSession(): Promise<void>;

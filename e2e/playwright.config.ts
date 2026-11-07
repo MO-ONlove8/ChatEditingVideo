@@ -33,6 +33,11 @@ export default defineConfig({
             testMatch: /media-live\.spec\.ts/,
             use: { ...devices['Desktop Chrome'], baseURL: 'http://localhost:4173' },
           },
+          {
+            name: 'editing-live',
+            testMatch: /editing-live\.spec\.ts/,
+            use: { ...devices['Desktop Chrome'], baseURL: 'http://localhost:4173' },
+          },
         ]
       : []),
   ],

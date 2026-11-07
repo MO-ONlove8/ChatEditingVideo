@@ -16,10 +16,14 @@ const CH = {
   setCloseGuard: 'window:set-close-guard',
   closeRequested: 'window:close-requested',
   confirmClose: 'window:confirm-close',
+  downloadRender: 'render:download',
+  cancelRenderDownload: 'render:cancel-download',
 } as const;
 
 /** The only surface the renderer gets. No raw ipcRenderer, no Node APIs. */
 const api: DesktopApi = {
+  downloadRender: (jobId) => ipcRenderer.invoke(CH.downloadRender, jobId),
+  cancelRenderDownload: (jobId) => ipcRenderer.invoke(CH.cancelRenderDownload, jobId),
   readSession: () => ipcRenderer.invoke(CH.readSession),
   saveSession: (token) => ipcRenderer.invoke(CH.saveSession, token),
   clearSession: () => ipcRenderer.invoke(CH.clearSession),

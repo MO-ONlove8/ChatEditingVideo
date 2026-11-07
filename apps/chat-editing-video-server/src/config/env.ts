@@ -30,6 +30,8 @@ export const EnvSchema = z.object({
   LLM_BASE_URL: z.url().default('http://localhost:11434/v1'),
   LLM_API_KEY: z.string().default('ollama'),
   LLM_MODEL: z.string().min(1).default('qwen3:8b'),
+  LLM_OLLAMA_CPU: z.stringbool().default(false),
+  LLM_TIMEOUT_MS: z.coerce.number().int().min(1000).default(180000),
   /** Disable to run the API without consuming render jobs (e.g. a separate worker process later). */
   JOBS_WORKER_ENABLED: z.stringbool().default(true),
   AUTH_CODE_TTL_SECONDS: z.coerce.number().int().min(60).default(300),

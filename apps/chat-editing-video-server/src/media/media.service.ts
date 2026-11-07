@@ -15,6 +15,7 @@ import {
 } from '@nestjs/common';
 import { and, asc, count, eq, inArray, lt, sql } from 'drizzle-orm';
 import {
+  EditingErrorCodes,
   MediaAssetSchema,
   UploadSchema,
   type CreateUploadsInput,
@@ -28,6 +29,9 @@ import {
   projects,
   uploadContexts,
   uploads,
+  timelines,
+  proposals,
+  chatTurns,
   type MediaAssetRow,
 } from '../database/schema.js';
 import { StorageService } from '../storage/storage.service.js';
@@ -92,7 +96,7 @@ export class MediaService implements OnApplicationBootstrap, OnModuleDestroy {
       await this.db
         .select()
         .from(mediaAssets)
-        .where(eq(mediaAssets.projectId, projectId))
+        .where(and(eq(mediaAssets.projectId, projectId), eq(mediaAssets.removed, false)))
         .orderBy(asc(mediaAssets.number))
     ).map(toMediaAsset);
   }
@@ -106,6 +110,7 @@ export class MediaService implements OnApplicationBootstrap, OnModuleDestroy {
           eq(mediaAssets.id, id),
           eq(projects.ownerId, ownerId),
           eq(projects.deleting, false),
+          eq(mediaAssets.removed, false),
           includeDeleting ? undefined : eq(mediaAssets.deleting, false),
         ),
       );
@@ -181,7 +186,7 @@ export class MediaService implements OnApplicationBootstrap, OnModuleDestroy {
         ? await tx
             .select({ n: count() })
             .from(mediaAssets)
-            .where(eq(mediaAssets.projectId, projectId))
+            .where(and(eq(mediaAssets.projectId, projectId), eq(mediaAssets.removed, false)))
         : [{ n: 0 }];
       const [reserved] = await tx
         .select({ n: count() })
@@ -399,19 +404,66 @@ export class MediaService implements OnApplicationBootstrap, OnModuleDestroy {
     const asset = await this.get(id, ownerId, true);
     await this.db.transaction(async (tx) => {
       await tx.execute(projectLock(asset.projectId));
+      const [timeline] = await tx
+        .select()
+        .from(timelines)
+        .where(eq(timelines.projectId, asset.projectId));
+      if (timeline?.state.clips.some((c) => c.source === id))
+        throw new ConflictException({
+          code: EditingErrorCodes.mediaReferenced,
+          message: '素材仍被时间轴片段引用，请先删除相关片段',
+        });
+      const cards = await tx
+        .update(proposals)
+        .set({ status: 'invalid' })
+        .where(
+          and(
+            eq(proposals.projectId, asset.projectId),
+            eq(proposals.status, 'pending'),
+            sql`${proposals.previewClip}->>'source' = ${id}`,
+          ),
+        )
+        .returning({ turnId: proposals.turnId });
+      if (cards.length)
+        await tx
+          .update(chatTurns)
+          .set({ status: 'done' })
+          .where(
+            inArray(
+              chatTurns.id,
+              cards.map((c) => c.turnId),
+            ),
+          );
       const jobs = await tx
         .select()
         .from(editJobs)
         .where(
           and(
             eq(editJobs.projectId, asset.projectId),
-            inArray(editJobs.status, ['queued', 'running']),
+            inArray(editJobs.status, ['queued', 'running', 'failed']),
           ),
         );
-      if (jobs.some((j) => j.plan.clips.some((c) => c.source === id)))
-        throw new ConflictException('素材仍被生成任务引用，请等待任务完成');
+      const pinned = jobs.some(
+        (j) => j.plan.version === 2 && j.plan.clips.some((c) => c.source === id),
+      );
+      if (pinned) {
+        // File cleanup must succeed before hiding the library entry, so a busy
+        // original remains visible and the user can retry deletion.
+        await this.storage.remove(asset.storageKey);
+        await this.storage.removeTree(`.cache/${asset.id}`);
+        await tx.update(mediaAssets).set({ removed: true }).where(eq(mediaAssets.id, id));
+        return;
+      }
       await tx.update(mediaAssets).set({ deleting: true }).where(eq(mediaAssets.id, id));
     });
+    const [current] = await this.db.select().from(mediaAssets).where(eq(mediaAssets.id, id));
+    if (current?.removed) {
+      await this.db
+        .update(projects)
+        .set({ updatedAt: new Date() })
+        .where(eq(projects.id, asset.projectId));
+      return;
+    }
     try {
       await this.purge(asset);
     } catch (error) {
@@ -436,6 +488,30 @@ export class MediaService implements OnApplicationBootstrap, OnModuleDestroy {
     await this.storage.removeTree(`projects/${asset.projectId}/derived/${asset.id}`);
     await this.storage.removeTree(`.cache/${asset.id}`);
     await this.db.delete(mediaAssets).where(eq(mediaAssets.id, asset.id));
+  }
+  async cleanupRemoved(projectId: string) {
+    const hidden = await this.db
+      .select()
+      .from(mediaAssets)
+      .where(and(eq(mediaAssets.projectId, projectId), eq(mediaAssets.removed, true)));
+    for (const asset of hidden) {
+      await this.db.transaction(async (tx) => {
+        await tx.execute(projectLock(projectId));
+        const jobs = await tx
+          .select()
+          .from(editJobs)
+          .where(
+            and(
+              eq(editJobs.projectId, projectId),
+              inArray(editJobs.status, ['queued', 'running', 'failed']),
+            ),
+          );
+        if (
+          !jobs.some((j) => j.plan.version === 2 && j.plan.clips.some((c) => c.source === asset.id))
+        )
+          await this.purge(asset);
+      });
+    }
   }
   async purgeProject(projectId: string) {
     const pending = await this.db
@@ -467,6 +543,11 @@ export class MediaService implements OnApplicationBootstrap, OnModuleDestroy {
     if (this.cleaning) return;
     this.cleaning = true;
     try {
+      const removed = await this.db
+        .select({ projectId: mediaAssets.projectId })
+        .from(mediaAssets)
+        .where(eq(mediaAssets.removed, true));
+      for (const id of new Set(removed.map((a) => a.projectId))) await this.cleanupRemoved(id);
       const stale = await this.db
         .select()
         .from(uploads)

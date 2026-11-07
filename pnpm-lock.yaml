@@ -171,6 +171,12 @@ importers:
       '@cev/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@remotion/media':
+        specifier: 4.0.541
+        version: 4.0.541(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@remotion/player':
+        specifier: 4.0.541
+        version: 4.0.541(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@tanstack/react-query':
         specifier: ^5.106.1
         version: 5.106.1(@types/react@19.3.0)(react@19.3.1)
@@ -186,6 +192,9 @@ importers:
       react-router:
         specifier: ^8.5.1
         version: 8.5.1(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      remotion:
+        specifier: 4.0.541
+        version: 4.0.541(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       zod:
         specifier: ^4.6.7
         version: 4.6.7
@@ -1308,6 +1317,18 @@ packages:
 
   '@remix-run/route-pattern@0.22.1':
     resolution: {integrity: sha512-czdGJWh09Lapvcqt7Vb09KlrU2PhRJ8xQaI+AItTuD9aDJ5MAgxnS38lnys6Ll+6RJEqPiaUqTwIQhVLwFvv+w==}
+
+  '@remotion/media@4.0.541':
+    resolution: {integrity: sha512-fB3j2+k1Ha1TA+sVIlkK61dQDo31UKcL68XTfDasMEuadqi1PpK94NdX5lqyp8is5dHBfT6XQgqpyeiL93Ifig==}
+    peerDependencies:
+      react: '>=16.8.0'
+      react-dom: '>=16.8.0'
+
+  '@remotion/player@4.0.541':
+    resolution: {integrity: sha512-HApJVi9KBuS0NLT3UoAujzOOKWtf/pS19E5HOoS/v3TxXg/0a3GVoERkDI1hQWKsuZWl4+RGKWRhOpAP8yYJVw==}
+    peerDependencies:
+      react: '>=16.8.0'
+      react-dom: '>=16.8.0'
 
   '@rolldown/binding-android-arm-eabi@1.2.16':
     resolution: {integrity: sha512-ia3DwAs0OsMGS7+IConptSiyk9pEXkOx/AbJ2n/lAGxH3QkWQus1t8d7gnAT38FCU2sQu8lUbeR6AiZFv4JxaA==}
@@ -3218,6 +3239,9 @@ packages:
     resolution: {integrity: sha512-yz3xRaG20c6/BOzvYoDaGtPmGscs7YivItZEEqe6GbwNfHuxu9YNmvnEkMzKldAGY4/80pRcQRZSEnhquk9XuQ==}
     engines: {node: '>= 0.8'}
 
+  mediabunny@1.64.0:
+    resolution: {integrity: sha512-ILat5qSwfmZjnYhk7Dc8uEvEQNtzXNxUVyfxR9Fp6JRa8Axsg5xE1EXwCTOzXJHhH/a2eyk6sZ1ffivCk4rIXg==}
+
   mediabunny@1.65.2:
     resolution: {integrity: sha512-goZpibvo/5hkc/56WVNm93Ini+o7K4y8aXA20c/BN1B+m3L5aHQa8MTvO+S1APg/YI8kMILtrX6QCqUtxLW7bA==}
 
@@ -3668,6 +3692,12 @@ packages:
 
   reflect-metadata@0.2.2:
     resolution: {integrity: sha512-urBwgfrvVP/eAyXx4hluJivBKzuEbSQs9rKWCrCkbSxNv8mxPcUZKeuoF3Uy4mJl3Lwprp6yy5/39VWigZ4K6Q==}
+
+  remotion@4.0.541:
+    resolution: {integrity: sha512-qpXfkMwKk3NJmlUzl6gJYebnMjbweXomna7KRu0EEBFPjxG94x8T0nAbXJmTUT3bHR8XA/edxsa9/HEr0ytA0g==}
+    peerDependencies:
+      react: '>=16.8.0'
+      react-dom: '>=16.8.0'
 
   require-directory@2.1.1:
     resolution: {integrity: sha512-fGxEI7+wsG9xrvdjsrlmL22OMTTiHRwAMroiEeMgq8gzoLC/PQr7RsRDSTLUg/bZAZtF+TVIkHc6/4RIKrui+Q==}
@@ -5269,6 +5299,20 @@ snapshots:
       playwright: 1.65.0
 
   '@remix-run/route-pattern@0.22.1': {}
+
+  '@remotion/media@4.0.541(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
+    dependencies:
+      mediabunny: 1.64.0
+      react: 19.3.1
+      react-dom: 19.3.1(react@19.3.1)
+      remotion: 4.0.541(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      zod: 4.6.7
+
+  '@remotion/player@4.0.541(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
+    dependencies:
+      react: 19.3.1
+      react-dom: 19.3.1(react@19.3.1)
+      remotion: 4.0.541(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
 
   '@rolldown/binding-android-arm-eabi@1.2.16':
     optional: true
@@ -7143,6 +7187,11 @@ snapshots:
 
   media-typer@1.1.1: {}
 
+  mediabunny@1.64.0:
+    dependencies:
+      '@types/dom-mediacapture-transform': 0.1.12
+      '@types/dom-webcodecs': 0.1.13
+
   mediabunny@1.65.2:
     dependencies:
       '@types/dom-mediacapture-transform': 0.1.12
@@ -7566,6 +7615,11 @@ snapshots:
   redis-errors@1.2.0: {}
 
   reflect-metadata@0.2.2: {}
+
+  remotion@4.0.541(react-dom@19.3.1(react@19.3.1))(react@19.3.1):
+    dependencies:
+      react: 19.3.1
+      react-dom: 19.3.1(react@19.3.1)
 
   require-directory@2.1.1: {}
 

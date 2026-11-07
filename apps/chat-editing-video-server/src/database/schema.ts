@@ -12,7 +12,7 @@ import {
   uuid,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
-import type { EditPlan, MediaInfo } from '@cev/shared';
+import type { EditPlan, MediaInfo, Timeline, EditOperation, Proposal } from '@cev/shared';
 
 const timestamps = {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -83,6 +83,7 @@ export const mediaAssets = pgTable(
     error: text('error'),
     generation: integer('generation').notNull().default(1),
     deleting: boolean('deleting').notNull().default(false),
+    removed: boolean('removed').notNull().default(false),
     original: jsonb('original').$type<MediaInfo>(),
     normalized: jsonb('normalized').$type<MediaInfo>(),
     normalizedKey: text('normalized_key'),
@@ -141,6 +142,11 @@ export const editJobs = pgTable(
     status: jobStatus('status').notNull().default('queued'),
     progress: integer('progress').notNull().default(0),
     plan: jsonb('plan').$type<EditPlan>().notNull(),
+    queuePrefix: text('queue_prefix').notNull().default('bull'),
+    revision: integer('revision'),
+    generation: integer('generation').notNull().default(1),
+    executionId: uuid('execution_id'),
+    heartbeatAt: timestamp('heartbeat_at', { withTimezone: true }),
     outputKey: text('output_key'),
     error: text('error'),
     ...timestamps,
@@ -151,3 +157,57 @@ export const editJobs = pgTable(
 export type ProjectRow = typeof projects.$inferSelect;
 export type MediaAssetRow = typeof mediaAssets.$inferSelect;
 export type EditJobRow = typeof editJobs.$inferSelect;
+
+export const timelines = pgTable('timelines', {
+  projectId: uuid('project_id')
+    .primaryKey()
+    .references(() => projects.id, { onDelete: 'cascade' }),
+  state: jsonb('state').$type<Timeline>().notNull(),
+});
+export const chatTurns = pgTable(
+  'chat_turns',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    requestId: uuid('request_id').notNull(),
+    text: text('text').notNull(),
+    reply: text('reply').notNull().default(''),
+    status: text('status').notNull().default('understanding'),
+    baseRevision: integer('base_revision').notNull(),
+    deadline: timestamp('deadline', { withTimezone: true }).notNull(),
+    createdAt: timestamps.createdAt,
+  },
+  (t) => [
+    uniqueIndex('chat_turn_request').on(t.projectId, t.requestId),
+    uniqueIndex('chat_turn_active')
+      .on(t.projectId)
+      .where(sql`${t.status} in ('understanding','pending')`),
+  ],
+);
+export const proposals = pgTable('edit_proposals', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  projectId: uuid('project_id')
+    .notNull()
+    .references(() => projects.id, { onDelete: 'cascade' }),
+  turnId: uuid('turn_id')
+    .notNull()
+    .unique()
+    .references(() => chatTurns.id, { onDelete: 'cascade' }),
+  baseRevision: integer('base_revision').notNull(),
+  status: text('status').notNull().default('pending'),
+  operation: jsonb('operation').$type<EditOperation>().notNull(),
+  sourceLabel: text('source_label').notNull(),
+  destinationLabel: text('destination_label').notNull(),
+  previewClip: jsonb('preview_clip').$type<Proposal['previewClip']>().notNull(),
+  appliedRevision: integer('applied_revision'),
+});
+export const timelineMutations = pgTable('timeline_mutations', {
+  requestId: uuid('request_id').primaryKey(),
+  projectId: uuid('project_id')
+    .notNull()
+    .references(() => projects.id, { onDelete: 'cascade' }),
+  clipId: uuid('clip_id').notNull(),
+  revision: integer('revision').notNull(),
+});

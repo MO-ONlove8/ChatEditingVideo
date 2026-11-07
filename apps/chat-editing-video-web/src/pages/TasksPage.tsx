@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ApiRoutes, ProjectSchema, type Project } from '@cev/shared';
+import { ApiRoutes, ProjectSchema, formatTimecode, type Project } from '@cev/shared';
+import { ExportControl } from '../components/ExportControl';
 import { api, apiFetch } from '../lib/api';
 import { useAuth } from '../stores/auth';
 import { Button, ConfirmDialog, EmptyState, Notice } from '../components/ui';
@@ -12,7 +13,13 @@ export function useTasks() {
     queryKey: ['tasks', userId],
     queryFn: ({ signal }) => api(ProjectSchema.array(), ApiRoutes.projects, { signal }),
     enabled: Boolean(userId),
-    refetchInterval: (q) => (q.state.data?.some((task) => task.processingCount > 0) ? 5000 : false),
+    refetchInterval: (q) =>
+      q.state.data?.some(
+        (task) =>
+          task.processingCount > 0 || ['queued', 'running'].includes(task.latestJob?.status ?? ''),
+      )
+        ? 2000
+        : false,
   });
 }
 
@@ -85,25 +92,36 @@ export function TasksPage() {
                       {dateFormatter.format(new Date(task.updatedAt))}
                     </time>
                   </td>
-                  <td>暂无主视频</td>
+                  <td>{task.hasMainVideo ? formatTimecode(task.durationFrames) : '暂无主视频'}</td>
                   <td>
                     <span className="badge">
                       {task.deletionPending
                         ? '删除未完成'
-                        : task.processingCount
-                          ? `素材处理中 (${task.processingCount})`
-                          : task.failedCount
-                            ? `素材处理失败 (${task.failedCount})`
-                            : task.mediaCount
-                              ? '素材已就绪'
-                              : '暂无素材'}
+                        : task.latestJob?.status === 'running' ||
+                            task.latestJob?.status === 'queued'
+                          ? `生成中 ${task.latestJob.progress}%`
+                          : task.latestJob?.status === 'failed'
+                            ? '生成失败'
+                            : task.processingCount
+                              ? `素材处理中 (${task.processingCount})`
+                              : task.failedCount
+                                ? `素材处理失败 (${task.failedCount})`
+                                : task.mediaCount
+                                  ? '素材已就绪'
+                                  : '暂无素材'}
                     </span>
                   </td>
                   <td>
                     <div className="task-actions">
-                      <Button disabled title="暂无主视频">
-                        查看
-                      </Button>
+                      {task.hasMainVideo && !task.deletionPending ? (
+                        <Link className="text-button" to={`/tasks/${task.id}/player`}>
+                          查看
+                        </Link>
+                      ) : (
+                        <Button disabled title="暂无主视频">
+                          查看
+                        </Button>
+                      )}
                       {task.deletionPending ? (
                         <Button disabled>继续编辑</Button>
                       ) : (
@@ -111,9 +129,7 @@ export function TasksPage() {
                           继续编辑
                         </Link>
                       )}
-                      <Button disabled title="暂无主视频">
-                        下载
-                      </Button>
+                      <ExportControl project={task} compact />
                       <Button onClick={() => setDeleting(task)}>
                         {task.deletionPending ? '重试删除' : '删除'}
                       </Button>

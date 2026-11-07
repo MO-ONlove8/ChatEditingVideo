@@ -190,6 +190,7 @@ function AssetRow({ asset }: { asset: MediaAsset }) {
   const refresh = async () => {
     await qc.invalidateQueries({ queryKey: ['media'] });
     await qc.invalidateQueries({ queryKey: ['tasks'] });
+    await qc.invalidateQueries({ queryKey: ['editor'] });
   };
   return (
     <div

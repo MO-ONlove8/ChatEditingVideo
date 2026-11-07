@@ -1,0 +1,1 @@
+ALTER TABLE "edit_jobs" ADD COLUMN "queue_prefix" text DEFAULT 'bull' NOT NULL;

@@ -37,7 +37,8 @@ const CSP = [
   "script-src 'self'",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
-  "media-src 'self' blob:",
+  "media-src 'self' blob: data:",
+  "worker-src 'self' blob:",
   `connect-src 'self' ${new URL(API_BASE_URL).origin}`,
 ].join('; ');
 
@@ -98,7 +99,11 @@ async function createWindow() {
   });
   const allowedOrigin = DEV_URL ? new URL(DEV_URL).origin : APP_ORIGIN;
   win.webContents.on('will-navigate', (event, url) => {
-    if (new URL(url).origin !== allowedOrigin) event.preventDefault();
+    const parsed = new URL(url);
+    // Node's URL reports "null" for the privileged app scheme.
+    const origin =
+      parsed.protocol === `${APP_SCHEME}:` ? `${parsed.protocol}//${parsed.host}` : parsed.origin;
+    if (origin !== allowedOrigin) event.preventDefault();
   });
 
   await loadWithRetry(win, DEV_URL ?? `${APP_ORIGIN}/`);

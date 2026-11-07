@@ -8,9 +8,14 @@ import {
 import { InjectQueue } from '@nestjs/bullmq';
 import type { Queue } from 'bullmq';
 import { and, desc, eq, sql, inArray } from 'drizzle-orm';
-import type { CreateProjectInput, Project, UpdateProjectInput } from '@cev/shared';
+import {
+  timelineFrames,
+  type CreateProjectInput,
+  type Project,
+  type UpdateProjectInput,
+} from '@cev/shared';
 import { DB, type Database } from '../database/database.module.js';
-import { editJobs, projects, mediaAssets, type ProjectRow } from '../database/schema.js';
+import { editJobs, projects, mediaAssets, timelines, type ProjectRow } from '../database/schema.js';
 import { StorageService } from '../storage/storage.service.js';
 import { EDIT_QUEUE } from '../jobs/jobs.constants.js';
 import { MediaService } from '../media/media.service.js';
@@ -27,6 +32,9 @@ export function toProject(row: ProjectRow): Project {
     mediaCount: 0,
     processingCount: 0,
     failedCount: 0,
+    durationFrames: 0,
+    timelineRevision: 0,
+    latestJob: null,
   };
 }
 
@@ -58,19 +66,55 @@ export class ProjectsService {
       })
       .from(mediaAssets)
       .where(
-        inArray(
-          mediaAssets.projectId,
-          rows.map((r) => r.id),
+        and(
+          eq(mediaAssets.removed, false),
+          inArray(
+            mediaAssets.projectId,
+            rows.map((r) => r.id),
+          ),
         ),
       )
       .groupBy(mediaAssets.projectId);
+    const states = await this.db
+      .select()
+      .from(timelines)
+      .where(
+        inArray(
+          timelines.projectId,
+          rows.map((r) => r.id),
+        ),
+      );
+    const jobs = await this.db
+      .select()
+      .from(editJobs)
+      .where(
+        inArray(
+          editJobs.projectId,
+          rows.map((r) => r.id),
+        ),
+      )
+      .orderBy(desc(editJobs.createdAt));
     return rows.map((row) => {
       const values = counts.find((c) => c.id === row.id);
+      const state = states.find((t) => t.projectId === row.id)?.state;
+      const job = jobs.find((j) => j.projectId === row.id && j.plan.version === 2);
       return {
         ...row,
         mediaCount: values?.total ?? 0,
         processingCount: values?.processing ?? 0,
         failedCount: values?.failed ?? 0,
+        hasMainVideo: Boolean(state?.clips.length),
+        durationFrames: state ? timelineFrames(state) : 0,
+        timelineRevision: state?.revision ?? 0,
+        latestJob: job
+          ? {
+              id: job.id,
+              revision: job.revision,
+              status: job.status,
+              progress: job.progress,
+              error: job.error,
+            }
+          : null,
       };
     });
   }
@@ -82,7 +126,28 @@ export class ProjectsService {
       .where(and(eq(projects.id, id), eq(projects.ownerId, ownerId)));
     if (!row) throw new NotFoundException('任务不存在');
     if (row.deleting) throw new ConflictException('任务正在删除，请重试删除');
-    return toProject(row);
+    const [state] = await this.db.select().from(timelines).where(eq(timelines.projectId, id));
+    const [job] = await this.db
+      .select()
+      .from(editJobs)
+      .where(and(eq(editJobs.projectId, id), sql`${editJobs.revision} is not null`))
+      .orderBy(desc(editJobs.createdAt))
+      .limit(1);
+    return {
+      ...toProject(row),
+      hasMainVideo: Boolean(state?.state.clips.length),
+      durationFrames: state ? timelineFrames(state.state) : 0,
+      timelineRevision: state?.state.revision ?? 0,
+      latestJob: job
+        ? {
+            id: job.id,
+            revision: job.revision,
+            status: job.status,
+            progress: job.progress,
+            error: job.error,
+          }
+        : null,
+    };
   }
 
   async create(input: CreateProjectInput, ownerId: string): Promise<Project> {
@@ -105,8 +170,8 @@ export class ProjectsService {
   }
 
   async remove(id: string, ownerId: string): Promise<void> {
-    // The worker holds the same lock while writing output. No new worker or upload
-    // can commit after this flag is set. Failed cleanup remains retryable.
+    // Workers claim and publish under this lock, but render outside it. The flag
+    // fences late publication; their heartbeat aborts active processes during cleanup.
     await this.db.transaction(async (tx) => {
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`project:${id}`}))`);
       const [row] = await tx
@@ -119,11 +184,14 @@ export class ProjectsService {
     const jobs = await this.db.select().from(editJobs).where(eq(editJobs.projectId, id));
     for (const job of jobs) {
       await this.queueCleanup(async () => {
-        const queued = await this.queue.getJob(job.id);
-        if (queued && !(await queued.isActive())) await queued.remove();
+        for (const queueId of [`${job.id}-${job.generation}`, job.id]) {
+          const queued = await this.queue.getJob(queueId);
+          if (queued && !(await queued.isActive())) await queued.remove();
+        }
       });
       if (job.outputKey) await this.storage.remove(job.outputKey);
       await this.storage.remove(`renders/${job.id}.manifest.json`);
+      await this.storage.removeTree(`renders/${job.id}`);
     }
     await this.media.purgeProject(id);
     await this.db.delete(projects).where(and(eq(projects.id, id), eq(projects.ownerId, ownerId)));

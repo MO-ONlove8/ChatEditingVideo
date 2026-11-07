@@ -28,6 +28,19 @@ export const ApiRoutes = {
   jobs: '/jobs',
   job: (id: string) => `/jobs/${encodeURIComponent(id)}`,
   jobEvents: (id: string) => `/jobs/${encodeURIComponent(id)}/events`,
+  editorState: (id: string) => `/projects/${encodeURIComponent(id)}/editor-state`,
+  projectChat: (id: string) => `/projects/${encodeURIComponent(id)}/chat`,
+  projectChatStream: (id: string) => `/projects/${encodeURIComponent(id)}/chat/stream`,
+  proposalConfirm: (id: string, proposal: string) =>
+    `/projects/${encodeURIComponent(id)}/proposals/${encodeURIComponent(proposal)}/confirm`,
+  proposalCancel: (id: string, proposal: string) =>
+    `/projects/${encodeURIComponent(id)}/proposals/${encodeURIComponent(proposal)}/cancel`,
+  clip: (id: string, clip: string) =>
+    `/projects/${encodeURIComponent(id)}/clips/${encodeURIComponent(clip)}`,
+  jobRetry: (id: string) => `/jobs/${encodeURIComponent(id)}/retry`,
+  jobContent: (id: string) => `/jobs/${encodeURIComponent(id)}/content`,
+  jobDownloadTicket: (id: string) => `/jobs/${encodeURIComponent(id)}/download-ticket`,
+  jobDownload: (id: string) => `/jobs/${encodeURIComponent(id)}/download`,
 } as const;
 
 /** Uniform error body returned by the server for 4xx/5xx. */

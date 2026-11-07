@@ -9,6 +9,14 @@ import {
 import { APP_ORIGIN } from './app-protocol.js';
 import { LocalFfmpegExecutor } from './local-executor.js';
 import { SessionStore } from './session-store.js';
+import { z } from 'zod';
+import { createWriteStream } from 'node:fs';
+import { rename, rm } from 'node:fs/promises';
+import path from 'node:path';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
+import { randomUUID } from 'node:crypto';
 
 /** Only our own renderer (app:// in prod, the dev server in dev) may call IPC. */
 function assertTrustedSender(event: IpcMainInvokeEvent, devOrigin: string | undefined) {
@@ -36,6 +44,47 @@ export function registerIpc(opts: {
   const running = new Map<string, AbortController>();
   const guard = (e: IpcMainInvokeEvent) => assertTrustedSender(e, opts.devOrigin);
   const sessions = new SessionStore(opts.sessionDir);
+  const downloads = new Map<string, AbortController>();
+  ipcMain.handle(IpcChannels.downloadRender, async (e, value: unknown) => {
+    guard(e);
+    const id = z.uuid().parse(value);
+    if (downloads.has(id)) throw new Error('该成品正在保存');
+    const abort = new AbortController();
+    downloads.set(id, abort);
+    let temp: string | undefined;
+    try {
+      const token = await sessions.read();
+      if (!token) throw new Error('请先登录');
+      const result = await dialog.showSaveDialog(BrowserWindow.fromWebContents(e.sender)!, {
+        defaultPath: path.join(opts.outputDir, `video-${id}.mp4`),
+        filters: [{ name: 'MP4视频', extensions: ['mp4'] }],
+      });
+      if (result.canceled || !result.filePath || abort.signal.aborted) return { cancelled: true };
+      temp = `${result.filePath}.${randomUUID()}.part`;
+      const response = await fetch(`${opts.appInfo.apiBaseUrl}/jobs/${id}/content`, {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: abort.signal,
+      });
+      if (!response.ok || !response.body) throw new Error('无法读取成品，请检查登录和生成状态');
+      await pipeline(
+        Readable.fromWeb(response.body as unknown as NodeReadableStream<Uint8Array>),
+        createWriteStream(temp, { flags: 'wx' }),
+        { signal: abort.signal },
+      );
+      await rename(temp, result.filePath);
+      return { cancelled: false };
+    } catch (error) {
+      if (temp) await rm(temp, { force: true });
+      if (abort.signal.aborted) return { cancelled: true };
+      throw error;
+    } finally {
+      downloads.delete(id);
+    }
+  });
+  ipcMain.handle(IpcChannels.cancelRenderDownload, (e, value: unknown) => {
+    guard(e);
+    downloads.get(z.uuid().parse(value))?.abort();
+  });
   ipcMain.handle(IpcChannels.readSession, (e) => {
     guard(e);
     return sessions.read();
@@ -48,6 +97,7 @@ export function registerIpc(opts: {
   });
   ipcMain.handle(IpcChannels.clearSession, (e) => {
     guard(e);
+    for (const abort of downloads.values()) abort.abort();
     return sessions.clear();
   });
   ipcMain.handle(IpcChannels.windowAction, (e, action: unknown) => {

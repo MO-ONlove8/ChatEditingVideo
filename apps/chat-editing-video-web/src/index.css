@@ -439,10 +439,14 @@ label {
 .editor-page {
   padding: 20px 24px;
   min-height: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 .editor-heading {
   margin-bottom: 20px;
   min-height: 36px;
+  flex-shrink: 0;
 }
 .editor-heading h1 {
   font-size: 20px;
@@ -459,12 +463,16 @@ label {
 }
 .workspace-grid {
   display: grid;
+  flex: 1;
+  min-height: 0;
   grid-template-columns: minmax(0, 1fr) minmax(270px, 28%);
   align-items: stretch;
   gap: 20px;
 }
 .workspace-left {
   min-width: 0;
+  overflow: auto;
+  padding-right: 1px;
 }
 .workspace-left .panel {
   padding: 16px;
@@ -565,6 +573,7 @@ label {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;
 }
 .chat-panel h2 {
   margin-bottom: 4px;
@@ -589,7 +598,8 @@ label {
 }
 .chat-composer {
   margin-top: auto;
-  padding-top: 40px;
+  padding-top: 12px;
+  flex-shrink: 0;
 }
 .chat-composer textarea {
   width: 100%;
@@ -799,6 +809,166 @@ label {
   display: flex;
   gap: 8px;
   align-items: center;
+}
+.timeline-player > input[type='range'] {
+  width: 100%;
+  accent-color: #555;
+  margin-top: 12px;
+}
+.timeline-player .player-controls {
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.timeline-player .player-controls input {
+  width: 90px;
+  accent-color: #555;
+}
+.timeline-player > small {
+  display: block;
+  margin-top: 8px;
+}
+.playback-error {
+  background: #eee;
+  padding: 20px;
+  color: #222;
+}
+.chat-history {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 0;
+}
+.chat-turn {
+  padding: 8px 0;
+  border-bottom: 1px solid #eee;
+  overflow-wrap: anywhere;
+}
+.chat-user {
+  background: #eceef0;
+  padding: 12px;
+  white-space: pre-wrap;
+  border-radius: 3px;
+}
+.proposal-card {
+  padding: 14px;
+  border: 1px solid #ccc;
+  background: #fff;
+}
+.proposal-card > .badge {
+  margin-left: 10px;
+}
+.proposal-card dl {
+  display: grid;
+  grid-template-columns: 70px 1fr;
+  gap: 12px;
+  font-size: 13px;
+}
+.proposal-card dt {
+  color: #777;
+}
+.proposal-card dd {
+  margin: 0;
+}
+.proposal-card > .row {
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+.proposal-card > .button {
+  width: 100%;
+}
+.clip-scroll {
+  overflow-x: auto;
+  position: relative;
+  margin-top: 12px;
+}
+.clip-track {
+  height: 94px;
+  position: relative;
+  min-width: 100%;
+}
+.clip-ticks {
+  height: 30px;
+  position: relative;
+  color: #777;
+  font-size: 11px;
+}
+.clip-ticks span {
+  position: absolute;
+  white-space: nowrap;
+}
+.clip-blocks {
+  display: flex;
+  height: 48px;
+}
+.clip-block {
+  position: relative;
+  background: #d3d6da;
+  border-right: 2px solid white;
+  flex: none;
+}
+.clip-block:nth-child(even) {
+  background: #bcc1c7;
+}
+.clip-select {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  padding: 8px;
+  overflow: hidden;
+  white-space: nowrap;
+  color: #222;
+  cursor: pointer;
+}
+.clip-delete {
+  position: absolute;
+  right: 2px;
+  top: 8px;
+  padding: 2px 5px;
+  background: #ddd;
+  min-width: 20px;
+}
+.clip-block:not(:hover):not(:focus-within) .clip-delete {
+  opacity: 0;
+}
+.playhead {
+  position: absolute;
+  top: 24px;
+  bottom: 8px;
+  width: 2px;
+  background: #333;
+  pointer-events: none;
+}
+.export-control {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+  max-width: 360px;
+}
+.export-status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+  font-size: 12px;
+}
+.export-status progress {
+  width: 160px;
+  accent-color: #555;
+}
+.export-control.compact {
+  align-items: flex-start;
+  max-width: 190px;
+}
+.export-control.compact > .button {
+  background: none;
+  border: 0;
+  padding: 0;
+}
+.export-control small {
+  font-size: 11px;
 }
 code {
   font-family: inherit;

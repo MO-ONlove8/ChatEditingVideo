@@ -12,20 +12,18 @@ export const EditJobSchema = z.object({
   plan: EditPlanSchema,
   outputKey: z.string().nullable(),
   error: z.string().nullable(),
+  revision: z.number().int().nullable().default(null),
+  generation: z.number().int().default(1),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
 export type EditJob = z.infer<typeof EditJobSchema>;
 
-export const CreateEditJobSchema = z
-  .object({
-    projectId: z.uuid(),
-    plan: EditPlanSchema,
-  })
-  .refine((input) => input.plan.clips.every((clip) => z.uuid().safeParse(clip.source).success), {
-    message: '服务端剪辑方案必须引用已上传的素材 ID',
-    path: ['plan', 'clips'],
-  });
+export const CreateEditJobSchema = z.object({
+  projectId: z.uuid(),
+  expectedRevision: z.number().int().nonnegative(),
+  requestId: z.uuid(),
+});
 export type CreateEditJobInput = z.infer<typeof CreateEditJobSchema>;
 
 /** Events streamed over SSE (server) or IPC (desktop) while a job runs. */
