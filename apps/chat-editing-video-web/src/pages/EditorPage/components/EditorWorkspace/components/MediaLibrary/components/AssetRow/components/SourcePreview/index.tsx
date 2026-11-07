@@ -1,26 +1,36 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Player, type PlayerRef } from '@remotion/player';
-import { formatTimecode, type MediaAsset } from '@cev/shared';
+import { formatTimecode, type MediaAsset, type MediaInfo } from '@cev/shared';
 import { useAuth } from '../../../../../../../../../../stores/auth';
 import { Composition } from '../../../../../../../../../../components/TimelinePlayer/components/Composition';
 import { Button } from '../../../../../../../../../../components/Button';
 import styles from './index.module.less';
+import { getLocalMedia } from '../../../../../../../../../../lib/local-media';
+import { LocalPreview } from './components/LocalPreview';
 
-export function SourcePreview({
+type PreviewProps = {
+  asset: MediaAsset;
+  info: MediaInfo;
+  localId?: string;
+  frame: number;
+  playing: boolean;
+  onFrame: (frame: number) => void;
+  onPlaying: (playing: boolean) => void;
+  onClose: () => void;
+};
+export function SourcePreview(props: PreviewProps) {
+  const source = getLocalMedia(props.localId);
+  return source ? <LocalPreview {...props} url={source.url} /> : <RemoteSourcePreview {...props} />;
+}
+function RemoteSourcePreview({
   asset,
   frame,
   playing,
   onFrame,
   onPlaying,
   onClose,
-}: {
-  asset: MediaAsset;
-  frame: number;
-  playing: boolean;
-  onFrame: (frame: number) => void;
-  onPlaying: (playing: boolean) => void;
-  onClose: () => void;
-}) {
+  info,
+}: PreviewProps) {
   const player = useRef<PlayerRef>(null);
   const token = useAuth((s) => s.token);
   const [retry, setRetry] = useState(0);
@@ -34,7 +44,7 @@ export function SourcePreview({
     },
     [onPlaying],
   );
-  const media = asset.normalized!;
+  const media = info;
   const total = media.frameCount!;
   const inputs = useMemo(
     () => ({

@@ -1,6 +1,10 @@
 import mediaProcessingStateStyles from '../../../../../../../../components/MediaProcessingState/index.module.less';
 import { useState } from 'react';
-import { retryTransfer, type Transfer } from '../../../../../../../../lib/media-upload';
+import {
+  cancelTransfer,
+  retryTransfer,
+  type Transfer,
+} from '../../../../../../../../lib/media-upload';
 import { Button } from '../../../../../../../../components/Button';
 import { Notice } from '../../../../../../../../components/Notice';
 import common from '../../../../../../../../styles/common.module.less';
@@ -26,6 +30,13 @@ export function TransferRow({ item }: { item: Transfer }) {
         </span>
       </div>
       <progress value={item.progress} max={100} />
+      {item.registered && item.status !== 'failed' && (
+        <Button
+          onClick={() => void cancelTransfer(item.id).catch((e: Error) => setError(e.message))}
+        >
+          取消上传
+        </Button>
+      )}
       {item.status === 'checking' && <p>{item.error}</p>}
       {item.status === 'failed' && (
         <>

@@ -9,7 +9,7 @@ import { MediaCoreModule } from './media-core.module.js';
 import { StorageService } from '../storage/storage.service.js';
 import { MediaController } from './media.controller.js';
 import { MediaFilesController } from './media-files.controller.js';
-import { MediaProcessor } from './media-processing.service.js';
+import { MediaProcessor, MediaIndexProcessor } from './media-processing.service.js';
 
 @Module({
   imports: [
@@ -38,6 +38,9 @@ import { MediaProcessor } from './media-processing.service.js';
 })
 export class MediaModule {
   static forRoot(env: Env): DynamicModule {
-    return { module: MediaModule, providers: env.MEDIA_WORKER_ENABLED ? [MediaProcessor] : [] };
+    return {
+      module: MediaModule,
+      providers: env.MEDIA_WORKER_ENABLED ? [MediaProcessor, MediaIndexProcessor] : [],
+    };
   }
 }

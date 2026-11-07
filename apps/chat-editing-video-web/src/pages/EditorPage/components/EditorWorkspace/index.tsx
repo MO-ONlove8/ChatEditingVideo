@@ -61,7 +61,7 @@ export function EditorWorkspace({ projectId }: { projectId?: string }) {
         />
         <MediaLibrary projectId={projectId} />
         <p className={`${common.muted} ${styles.editorNote}`}>
-          完整上传即保存；统一转换为30帧/秒后可查看帧图并用于剪辑。
+          选择视频即可预览；完整上传并校验后可剪辑，不兼容的格式会自动转换。
         </p>
       </div>
       <ChatPanel

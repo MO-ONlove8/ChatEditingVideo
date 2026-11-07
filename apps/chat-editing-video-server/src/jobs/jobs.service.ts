@@ -18,12 +18,13 @@ import {
   EditingErrorCodes,
   type CreateEditJobInput,
   type EditJob,
-  type RenderPlan,
+  type DirectRenderPlan,
 } from '@cev/shared';
 import { DB, type Database } from '../database/database.module.js';
 import { editJobs, mediaAssets, projects, type EditJobRow } from '../database/schema.js';
 import { EditingService } from '../editing/editing.service.js';
 import { projectLock } from '../media/media-processing.service.js';
+import { editingSource } from '../media/media-source.js';
 import { StorageService } from '../storage/storage.service.js';
 import { REDIS, ensureConnected } from '../redis/redis.module.js';
 import { AuthService, type AuthSession } from '../auth/auth.service.js';
@@ -92,11 +93,17 @@ export class JobsService implements OnApplicationBootstrap, OnModuleDestroy {
         const a = assets.find(
           (a) => a.id === c.source && a.generation === c.generation && a.status === 'ready',
         );
-        if (!a?.normalizedKey) throw new ConflictException('来源素材已不可用');
-        return { ...c, sourceKey: a.normalizedKey };
+        const source = a && editingSource(a);
+        if (!source) throw new ConflictException('来源素材已不可用');
+        return {
+          ...c,
+          sourceKey: source.key,
+          sourceMode: source.kind,
+          hasAudio: source.info.hasAudio,
+        };
       });
-      const plan: RenderPlan = {
-        version: 2,
+      const plan: DirectRenderPlan = {
+        version: 3,
         revision: timeline.revision,
         clips,
         output: { container: 'mp4', ...timeline.canvas },
@@ -129,7 +136,7 @@ export class JobsService implements OnApplicationBootstrap, OnModuleDestroy {
     const row = await this.db.transaction(async (tx) => {
       await this.editing.locked(tx, job.projectId, ownerId);
       const [current] = await tx.select().from(editJobs).where(eq(editJobs.id, id));
-      if (current!.plan.version !== 2)
+      if (current!.plan.version === 1)
         throw new ConflictException('历史占位任务不能导出，请按当前剪辑重新生成');
       if (current!.status !== 'failed') return current!;
       for (const clip of current!.plan.clips)
@@ -248,7 +255,7 @@ export class JobsService implements OnApplicationBootstrap, OnModuleDestroy {
   }
   async ticket(id: string, session: AuthSession) {
     const job = await this.get(id, session.user.id);
-    if (job.status !== 'succeeded' || job.plan.version !== 2 || !job.outputKey)
+    if (job.status !== 'succeeded' || job.plan.version === 1 || !job.outputKey)
       throw new ConflictException({
         code: EditingErrorCodes.renderNotReady,
         message: '成品尚未生成完成',

@@ -42,7 +42,7 @@ export function createServerExecutor(projectId: string): EditExecutor {
   return {
     kind: 'server',
     async execute({ plan, onEvent, signal }: ExecuteOptions): Promise<ExecuteResult> {
-      if (plan.version !== 2) throw new Error('请先确认并保存剪辑结果，再生成成品');
+      if (plan.version === 1) throw new Error('请先确认并保存剪辑结果，再生成成品');
       const job = await api(EditJobSchema, ApiRoutes.jobs, {
         method: 'POST',
         body: JSON.stringify({

@@ -22,6 +22,7 @@ import { CreateUploadsSchema, encodeSse, type CreateUploadsInput } from '@cev/sh
 import { CurrentSession } from '../auth/auth.guard.js';
 import { AuthService, type AuthSession } from '../auth/auth.service.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
+import { editingSource } from './media-source.js';
 import { MediaService } from './media.service.js';
 import { MediaImages } from './media-images.service.js';
 import { StorageService } from '../storage/storage.service.js';
@@ -134,9 +135,15 @@ export class MediaFilesController {
       (!/^\d+$/.test(generation) || Number(generation) !== asset.generation)
     )
       throw new BadRequestException('素材处理版本已变化，请刷新后重试');
-    if (asset.status !== 'ready' || !asset.normalizedKey)
-      throw new BadRequestException('素材尚未处理完成');
-    await this.send(asset.normalizedKey, 'video/mp4', req, res, session);
+    const source = editingSource(asset);
+    if (asset.status !== 'ready' || !source) throw new BadRequestException('素材尚未处理完成');
+    await this.send(
+      source.key,
+      source.kind === 'original' ? asset.mimeType : 'video/mp4',
+      req,
+      res,
+      session,
+    );
   }
   @Get('projects/:id/media/events') async events(
     @Param('id', ParseUUIDPipe) id: string,

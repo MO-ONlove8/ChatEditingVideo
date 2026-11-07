@@ -39,7 +39,7 @@ const CSP = [
   "img-src 'self' data: blob:",
   "media-src 'self' blob: data:",
   "worker-src 'self' blob:",
-  `connect-src 'self' ${new URL(API_BASE_URL).origin}`,
+  `connect-src 'self' blob: ${new URL(API_BASE_URL).origin}`,
 ].join('; ');
 
 function registerAppProtocol() {

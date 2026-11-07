@@ -10,6 +10,7 @@ import {
   type Page,
 } from '@playwright/test';
 import type { DesktopApi } from '../../packages/shared/src/ipc.js';
+import { videoFixture } from '../../apps/chat-editing-video-server/test/support/video.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const desktopDir = path.resolve(here, '../../apps/chat-editing-video-desktop');
@@ -115,6 +116,53 @@ test('opens the editor in the minimum native window', async () => {
   await expect(page.getByRole('heading', { name: '对话剪辑' })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: test.info().outputPath('desktop-editor.png') });
+});
+
+test('decodes local thumbnails in a worker and previews a File under app:// CSP', async () => {
+  const file = await videoFixture(path.resolve(here, '../test-results/desktop-local.mp4'));
+  let upload: Record<string, unknown>;
+  const headers = {
+    'access-control-allow-origin': 'app://local',
+    'access-control-allow-headers': 'authorization,content-type',
+    'access-control-allow-methods': 'GET,POST,PUT,DELETE,OPTIONS',
+  };
+  await page.route('**/api/media/policy', (route) =>
+    route.fulfill({ headers, json: { maxBatch: 3, maxAssets: 10, maxBytes: 1024 ** 3, fps: 30 } }),
+  );
+  await page.route('**/api/uploads', async (route) => {
+    if (route.request().method() === 'OPTIONS') {
+      await route.fulfill({ status: 204, headers });
+      return;
+    }
+    const input = route.request().postDataJSON();
+    upload = {
+      ...input.files[0],
+      contextId: input.contextId,
+      projectId: null,
+      status: 'pending',
+      error: null,
+      asset: null,
+    };
+    await route.fulfill({ status: 201, headers, json: [upload] });
+  });
+  await page.route('**/api/uploads/*/content', async (route) => {
+    if (route.request().method() === 'OPTIONS') await route.fulfill({ status: 204, headers });
+  });
+  await page.route('**/api/uploads/*', (route) =>
+    route.fulfill({ headers, json: { ...upload, status: 'cancelled' } }),
+  );
+  await page.getByLabel('选择视频素材').setInputFiles(file);
+  await page.getByTestId('local-thumbnail').first().scrollIntoViewIfNeeded();
+  await expect(page.getByTestId('local-thumbnail').first()).toHaveAttribute('data-loaded', 'true');
+  await page.getByRole('button', { name: '播放素材 V0' }).click();
+  const video = page.getByRole('region', { name: 'V0 素材预览' }).locator('video');
+  await expect(video).toBeVisible();
+  await expect
+    .poll(() => video.evaluate((v: HTMLVideoElement) => v.readyState))
+    .toBeGreaterThanOrEqual(2);
+  await page.getByRole('button', { name: '取消上传', exact: true }).click();
+  await expect(video).not.toBeVisible();
+  await expect.poll(() => page.workers().length).toBe(0);
 });
 
 test('intercepts native close and presents the application confirmation', async () => {

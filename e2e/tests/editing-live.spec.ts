@@ -60,10 +60,21 @@ test('real model, saved confirmation, authenticated Remotion preview and browser
   await expect(sourceSlider).toHaveAttribute('aria-valuenow', '299');
   await expect(sourceSlider).toBeInViewport();
   const sourcePreview = page.getByRole('region', { name: 'V1 素材预览' });
-  await expect(sourcePreview.locator('canvas')).toBeVisible({ timeout: 15000 });
+  await expect(sourcePreview.locator('video, canvas')).toBeVisible({ timeout: 15000 });
   const canvasPixel = () =>
-    sourcePreview.locator('canvas').evaluate((canvas) => {
-      const ctx = (canvas as HTMLCanvasElement).getContext('2d')!;
+    sourcePreview.locator('video, canvas').evaluate((element) => {
+      const canvas = document.createElement('canvas');
+      canvas.width =
+        element instanceof HTMLVideoElement
+          ? element.videoWidth
+          : (element as HTMLCanvasElement).width;
+      canvas.height =
+        element instanceof HTMLVideoElement
+          ? element.videoHeight
+          : (element as HTMLCanvasElement).height;
+      if (!canvas.width || !canvas.height) return 0;
+      const ctx = canvas.getContext('2d')!;
+      ctx.drawImage(element as HTMLVideoElement | HTMLCanvasElement, 0, 0);
       const data = ctx.getImageData(
         0,
         0,

@@ -101,6 +101,9 @@ importers:
       ioredis:
         specifier: ^6.0.0
         version: 6.0.0
+      mediabunny:
+        specifier: 1.65.2
+        version: 1.65.2
       multer:
         specifier: ^2.5.0
         version: 2.5.0

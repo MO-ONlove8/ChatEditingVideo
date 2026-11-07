@@ -97,7 +97,7 @@ export class ProjectsService {
     return rows.map((row) => {
       const values = counts.find((c) => c.id === row.id);
       const state = states.find((t) => t.projectId === row.id)?.state;
-      const job = jobs.find((j) => j.projectId === row.id && j.plan.version === 2);
+      const job = jobs.find((j) => j.projectId === row.id && j.plan.version !== 1);
       return {
         ...row,
         mediaCount: values?.total ?? 0,

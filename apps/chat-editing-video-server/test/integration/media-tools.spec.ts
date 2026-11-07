@@ -28,6 +28,9 @@ describe('native FFmpeg media processing', () => {
     it(`normalizes ${rate} fps to CFR 30 with silent stereo AAC`, async () => {
       const source = await videoFixture(path.join(root, `source-${rate}.mp4`), [], rate);
       const info = await tools.probe(source);
+      const direct = await tools.directInfo(source, info, signal);
+      if (rate === 30) expect(direct).toMatchObject({ frameCount: 36, hasAudio: false });
+      else expect(direct).toBeNull();
       const output = path.join(root, `edit-${rate}.mp4`);
       await tools.normalize(source, output, info, signal, () => {});
       const result = await tools.probe(output, true);
@@ -59,6 +62,7 @@ describe('native FFmpeg media processing', () => {
     const rotated = path.join(root, 'rotated.mov');
     await run(['-display_rotation:v:0', '90', '-i', original, '-c', 'copy', rotated]);
     const info = await tools.probe(rotated);
+    expect(await tools.directInfo(rotated, info, signal)).toBeNull();
     expect(info.width).toBe(180);
     expect(info.height).toBe(320);
     const output = path.join(root, 'rotated-edit.mp4');
@@ -100,6 +104,7 @@ describe('native FFmpeg media processing', () => {
     ]);
     const info = await tools.probe(source);
     expect(info).toMatchObject({ hdr: true, hasAudio: true, width: 640 });
+    expect(await tools.directInfo(source, info, signal)).toBeNull();
     const output = path.join(root, 'hdr-edit.mp4');
     await tools.normalize(source, output, info, signal, () => {});
     expect(await tools.probe(output, true)).toMatchObject({
@@ -117,5 +122,27 @@ describe('native FFmpeg media processing', () => {
     const abort = new AbortController();
     abort.abort();
     await expect(tools.run(env.FFMPEG_PATH, ['-version'], abort.signal)).rejects.toThrow('取消');
+  });
+
+  it('rejects irregular packet timestamps even when the average rate is 30 fps', async () => {
+    const source = path.join(root, 'irregular.mp4');
+    await run([
+      '-f',
+      'lavfi',
+      '-i',
+      'testsrc2=size=320x180:rate=60:duration=2',
+      '-vf',
+      'select=eq(mod(n\\,4)\\,0)+eq(mod(n\\,4)\\,1)',
+      '-fps_mode',
+      'vfr',
+      '-c:v',
+      'libx264',
+      '-pix_fmt',
+      'yuv420p',
+      '-threads',
+      '1',
+      source,
+    ]);
+    expect(await tools.directInfo(source, await tools.probe(source), signal)).toBeNull();
   });
 });

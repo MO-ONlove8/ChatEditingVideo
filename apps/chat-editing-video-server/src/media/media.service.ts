@@ -320,8 +320,9 @@ export class MediaService implements OnApplicationBootstrap, OnModuleDestroy {
         await tx.update(uploads).set({ status: 'saved', assetId }).where(eq(uploads.id, id));
       });
       committed = true;
-      void this.processing.recover();
-      return this.uploadResult(id, ownerId);
+      const result = await this.uploadResult(id, ownerId);
+      if (result.asset) await this.processing.enqueueAsset(result.asset.id).catch(() => {});
+      return result;
     } catch (error) {
       if (stored && !committed) await this.storage.remove(stored);
       await this.db
@@ -397,7 +398,7 @@ export class MediaService implements OnApplicationBootstrap, OnModuleDestroy {
         queuePrefix: this.env.QUEUE_PREFIX,
       });
     });
-    void this.processing.recover();
+    await this.processing.enqueueAsset(id).catch(() => {});
     return toMediaAsset(await this.get(id, ownerId));
   }
   async remove(id: string, ownerId: string) {
@@ -444,12 +445,10 @@ export class MediaService implements OnApplicationBootstrap, OnModuleDestroy {
           ),
         );
       const pinned = jobs.some(
-        (j) => j.plan.version === 2 && j.plan.clips.some((c) => c.source === id),
+        (j) => j.plan.version !== 1 && j.plan.clips.some((c) => c.source === id),
       );
       if (pinned) {
-        // File cleanup must succeed before hiding the library entry, so a busy
-        // original remains visible and the user can retry deletion.
-        await this.storage.remove(asset.storageKey);
+        // Retain every immutable source until all export snapshots release it.
         await this.storage.removeTree(`.cache/${asset.id}`);
         await tx.update(mediaAssets).set({ removed: true }).where(eq(mediaAssets.id, id));
         return;
@@ -507,7 +506,7 @@ export class MediaService implements OnApplicationBootstrap, OnModuleDestroy {
             ),
           );
         if (
-          !jobs.some((j) => j.plan.version === 2 && j.plan.clips.some((c) => c.source === asset.id))
+          !jobs.some((j) => j.plan.version !== 1 && j.plan.clips.some((c) => c.source === asset.id))
         )
           await this.purge(asset);
       });

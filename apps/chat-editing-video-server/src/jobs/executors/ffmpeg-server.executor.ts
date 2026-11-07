@@ -23,7 +23,7 @@ export class FfmpegServerExecutor implements EditExecutor {
     onEvent,
     signal,
   }: ExecuteOptions): Promise<ExecuteResult> {
-    if (plan.version !== 2) throw new Error('历史占位方案不可生成，请按当前剪辑重新下载');
+    if (plan.version === 1) throw new Error('历史占位方案不可生成，请按当前剪辑重新下载');
     const prefix = `renders/${jobId}/${executionId}`;
     const temp = `${prefix}/segments`;
     await this.storage.write(`${temp}/video.ffconcat`, 'ffconcat version 1.0\n');
@@ -40,9 +40,10 @@ export class FfmpegServerExecutor implements EditExecutor {
           count = clipFrames(c),
           second = Math.floor(c.startFrame / 30),
           start = c.startFrame - second * 30;
+        const hasAudio = !('hasAudio' in c) || c.hasAudio;
         const name = String(i).padStart(3, '0');
         const vf = `trim=start_frame=${start}:end_frame=${start + count},setpts=PTS-STARTPTS,scale=${width}:${height}:force_original_aspect_ratio=decrease:force_divisible_by=2,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,format=yuv420p`;
-        const af = `atrim=start_sample=${start * 1600}:end_sample=${(start + count) * 1600},asetpts=PTS-STARTPTS,aresample=48000,apad,atrim=end_sample=${count * 1600}`;
+        const af = `aresample=48000,atrim=start_sample=${start * 1600}:end_sample=${(start + count) * 1600},asetpts=PTS-STARTPTS,apad,atrim=end_sample=${count * 1600}`;
         await this.tools.run(
           this.tools.env.FFMPEG_PATH,
           [
@@ -59,6 +60,7 @@ export class FfmpegServerExecutor implements EditExecutor {
             String(second),
             '-i',
             this.storage.resolve(c.sourceKey),
+            ...(!hasAudio ? ['-f', 'lavfi', '-i', 'anullsrc=r=48000:cl=stereo'] : []),
             '-map',
             '0:v:0',
             '-an',
@@ -94,7 +96,7 @@ export class FfmpegServerExecutor implements EditExecutor {
             String(count),
             this.storage.resolve(`${temp}/${name}.mp4`),
             '-map',
-            '0:a:0',
+            hasAudio ? '0:a:0' : '1:a:0',
             '-vn',
             '-af',
             af,

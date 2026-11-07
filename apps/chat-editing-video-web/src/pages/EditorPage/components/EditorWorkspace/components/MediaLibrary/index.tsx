@@ -1,13 +1,17 @@
 import { useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ApiRoutes, MediaPolicySchema } from '@cev/shared';
+import { ApiRoutes, MediaPolicySchema, type MediaAsset } from '@cev/shared';
 import { api } from '../../../../../../lib/api';
-import { prepareUploads, selectVideos, useTransfers } from '../../../../../../lib/media-upload';
+import {
+  prepareUploads,
+  selectVideos,
+  useTransfers,
+  type Transfer,
+} from '../../../../../../lib/media-upload';
 import { Button } from '../../../../../../components/Button';
 import { Notice } from '../../../../../../components/Notice';
 import { useMedia } from './hooks/useMedia';
 import { AssetRow } from './components/AssetRow';
-import { TransferRow } from './components/TransferRow';
 import common from '../../../../../../styles/common.module.less';
 import styles from './index.module.less';
 
@@ -22,6 +26,31 @@ export function MediaLibrary({ projectId }: { projectId?: string }) {
   useEffect(() => {
     prepareUploads(projectId);
   }, [projectId]);
+  useEffect(() => {
+    if (!assets.data) return;
+    useTransfers.setState((s) => ({
+      items: s.items.map((item) => {
+        const asset = assets.data.find((a) => a.id === item.asset?.id);
+        return asset ? { ...item, asset } : item;
+      }),
+    }));
+  }, [assets.data]);
+  const rows: Array<{ key: string; transfer?: Transfer; asset?: MediaAsset }> = transfers.items
+    .filter((item) => item.status !== 'cancelled')
+    .map((item) => ({
+      key: item.id,
+      transfer: item,
+      asset: assets.data?.find((asset) => asset.id === item.asset?.id) ?? item.asset,
+    }));
+  for (const asset of assets.data ?? []) {
+    if (!rows.some((row) => row.asset?.id === asset.id))
+      rows.push({ key: `${asset.id}:${asset.generation}`, transfer: undefined, asset });
+  }
+  rows.sort(
+    (left, right) =>
+      (left.asset?.number ?? Number.MAX_SAFE_INTEGER) -
+      (right.asset?.number ?? Number.MAX_SAFE_INTEGER),
+  );
   return (
     <section
       className={`${common.panel} ${styles.assetsPanel}`}
@@ -71,8 +100,8 @@ export function MediaLibrary({ projectId }: { projectId?: string }) {
           {policy.error && <Button onClick={() => void policy.refetch()}>重试连接</Button>}
         </Notice>
       )}
-      {transfers.items.map((item) => (
-        <TransferRow key={item.id} item={item} />
+      {rows.map((row) => (
+        <AssetRow key={row.key} transfer={row.transfer} asset={row.asset} />
       ))}
       {assets.error && (
         <Notice kind="error">
@@ -85,9 +114,6 @@ export function MediaLibrary({ projectId }: { projectId?: string }) {
           <p>至少 1 个素材完整上传后，才会创建并保存任务</p>
         </div>
       )}
-      {assets.data?.map((asset) => (
-        <AssetRow key={`${asset.id}:${asset.generation}`} asset={asset} />
-      ))}
     </section>
   );
 }

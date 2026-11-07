@@ -7,7 +7,7 @@ import {
   type PointerEvent,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { formatTimecode, type MediaAsset } from '@cev/shared';
+import { formatTimecode, type MediaAsset, type MediaInfo } from '@cev/shared';
 import { Button } from '../../../../../../../../../../components/Button';
 import { ThumbnailPage } from '../ThumbnailPage';
 import { SourcePreview } from '../SourcePreview';
@@ -18,9 +18,13 @@ const PIXELS_PER_SECOND = 160;
 export function AssetScrubber({
   asset,
   onSelect,
+  info,
+  localId,
 }: {
   asset: MediaAsset;
-  onSelect: (second: number) => void;
+  onSelect?: (second: number) => void;
+  info: MediaInfo;
+  localId?: string;
 }) {
   const strip = useRef<HTMLDivElement>(null);
   const root = useRef<HTMLDivElement>(null);
@@ -38,8 +42,14 @@ export function AssetScrubber({
   const [open, setOpen] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [position, setPosition] = useState({ left: 0, top: 0, width: 360, height: 246 });
-  const total = asset.normalized!.frameCount!;
+  const total = info.frameCount!;
   const pixels = (frame / 30) * PIXELS_PER_SECOND;
+  useLayoutEffect(() => {
+    if (frame >= total) {
+      setFrame(total - 1);
+      setPlaying(false);
+    }
+  }, [frame, total]);
   const close = useCallback(() => {
     pointer.current = null;
     setDragging(false);
@@ -197,10 +207,13 @@ export function AssetScrubber({
                 key={page}
                 asset={asset}
                 page={page}
+                total={total}
+                localId={localId}
                 onSelect={(second) => {
                   setFrame(Math.min(total - 1, second * 30));
                   setPlaying(false);
-                  onSelect(second);
+                  if (onSelect) onSelect(second);
+                  else setOpen(true);
                 }}
               />
             ))}
@@ -236,6 +249,8 @@ export function AssetScrubber({
           <div ref={popup} className={styles.popup} style={position}>
             <SourcePreview
               asset={asset}
+              localId={localId}
+              info={info}
               frame={frame}
               playing={playing}
               onFrame={setFrame}

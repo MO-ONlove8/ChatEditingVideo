@@ -16,6 +16,11 @@ export const MediaInfoSchema = z.object({
   frameCount: z.number().int().positive().optional(),
 });
 export type MediaInfo = z.infer<typeof MediaInfoSchema>;
+export const EditingMediaSchema = z.object({
+  kind: z.enum(['original', 'normalized']),
+  info: MediaInfoSchema.safeExtend({ frameCount: z.number().int().positive() }),
+});
+export type EditingMedia = z.infer<typeof EditingMediaSchema>;
 export const MediaStatusSchema = z.enum(['queued', 'processing', 'ready', 'failed']);
 
 export const MediaAssetSchema = z.object({
@@ -35,6 +40,7 @@ export const MediaAssetSchema = z.object({
   deleting: z.boolean().default(false),
   original: MediaInfoSchema.nullable(),
   normalized: MediaInfoSchema.nullable(),
+  editing: EditingMediaSchema.nullable().default(null),
   createdAt: z.iso.datetime(),
 });
 export type MediaAsset = z.infer<typeof MediaAssetSchema>;

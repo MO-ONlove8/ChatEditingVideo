@@ -1,3 +1,4 @@
+import { editingSource } from '../media/media-source.js';
 import { randomUUID } from 'node:crypto';
 import {
   BadRequestException,
@@ -226,7 +227,7 @@ export class EditingService {
           assets: started.assets.map((a) => ({
             number: a.number,
             status: a.status,
-            frameCount: a.normalized?.frameCount,
+            frameCount: editingSource(a)?.info.frameCount,
           })),
           clips: started.timeline.clips.map((c, i) => ({ number: i + 1, ...c })),
         },
@@ -318,12 +319,13 @@ export class EditingService {
     if (intent.kind === 'add') {
       const asset = assets.find((a) => a.number === intent.sourceNumber);
       if (!asset) throw new Error(`素材V${intent.sourceNumber}不存在`);
-      if (asset.status !== 'ready' || !asset.normalized)
+      const source = editingSource(asset);
+      if (asset.status !== 'ready' || !source)
         throw new Error(`素材V${intent.sourceNumber}尚未处理完成`);
       if (!intent.startTime || !intent.endTime) throw new Error('请补充截取的起止时间');
       const startFrame = parseTimecode(intent.startTime),
         endFrame = parseTimecode(intent.endTime);
-      if (endFrame < startFrame || endFrame >= (asset.normalized.frameCount ?? 0))
+      if (endFrame < startFrame || endFrame >= (source.info.frameCount ?? 0))
         throw new Error('截取范围无效：结束不能早于开始，且不能超出素材范围');
       const clip = {
         id: randomUUID(),
@@ -332,7 +334,7 @@ export class EditingService {
         startFrame,
         endFrame,
       };
-      const size = asset.original ?? asset.normalized;
+      const size = asset.original ?? source.info;
       operation = { kind: 'add', clip, destination, canvas: outputCanvas(size.width, size.height) };
       previewClip = clip;
       sourceLabel = `V${asset.number}`;

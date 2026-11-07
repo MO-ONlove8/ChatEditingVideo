@@ -44,7 +44,7 @@ export function EditorPage() {
       void navigate(path, { replace: true });
     } else if (id) useUploads.setState({ internalPath: null });
   }, [id, savedProjectId, navigate, qc]);
-  if (id && task.isPending)
+  if (id && task.isPending && savedProjectId !== id)
     return (
       <main className={common.pageWidth}>
         <Notice>正在加载任务…</Notice>

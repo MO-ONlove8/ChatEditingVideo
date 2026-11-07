@@ -105,7 +105,7 @@ export class JobsController {
     download: boolean,
   ) {
     const job = await this.jobs.get(id, session.user.id);
-    if (job.status !== 'succeeded' || job.plan.version !== 2 || !job.outputKey)
+    if (job.status !== 'succeeded' || job.plan.version === 1 || !job.outputKey)
       throw new ConflictException({
         code: EditingErrorCodes.renderNotReady,
         message: '成品尚未生成完成',

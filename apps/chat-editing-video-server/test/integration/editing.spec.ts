@@ -89,7 +89,7 @@ describe('persisted editing and real rendering', () => {
         .set(auth())
         .expect(201)
     ).body as EditorState;
-  const create = async () => {
+  const create = async (payload = video) => {
     const project = (
       await request(app.getHttpServer())
         .post('/api/projects')
@@ -102,7 +102,7 @@ describe('persisted editing and real rendering', () => {
       await request(app.getHttpServer())
         .post(`/api/projects/${project.id}/media`)
         .set(auth())
-        .attach('file', video, { filename: 'source.mp4', contentType: 'video/mp4' })
+        .attach('file', payload, { filename: 'source.mp4', contentType: 'video/mp4' })
         .expect(201)
     ).body;
     await expect
@@ -123,7 +123,7 @@ describe('persisted editing and real rendering', () => {
       STORAGE_DIR: root,
       QUEUE_PREFIX: `editing-${randomUUID()}`,
     };
-    video = await readFile(await videoFixture(path.join(root, 'fixture.mp4'), [], 30, 10));
+    video = await readFile(await videoFixture(path.join(root, 'fixture.mp4'), [], 24, 10));
     const module = await Test.createTestingModule({ imports: [AppModule.forRoot(env)] })
       .overrideProvider(LlmService)
       .useValue({ understand, ping: async () => {} })
@@ -540,6 +540,177 @@ describe('persisted editing and real rendering', () => {
       (await app.get(MediaTools).probe(app.get(StorageService).resolve(rendered.outputKey!), true))
         .frameCount,
     ).toBe(1);
+  }, 40000);
+  it('edits original CFR video without normalizing or eagerly generating thumbnails', async () => {
+    const tools = app.get(MediaTools);
+    const file = await videoFixture(path.join(root, 'direct.mp4'), ['-g', '250'], 30, 10);
+    const normalize = vi.spyOn(tools, 'normalize');
+    const thumbnails = vi.spyOn(tools, 'thumbnails');
+    try {
+      const { id, assetId } = await create(await readFile(file));
+      const [asset] = await db.select().from(mediaAssets).where(eq(mediaAssets.id, assetId));
+      expect(asset).toMatchObject({
+        status: 'ready',
+        normalized: null,
+        normalizedKey: null,
+        editing: { kind: 'original', info: { frameCount: 300, hasAudio: false } },
+      });
+      expect(asset!.editingKey).toBe(asset!.storageKey);
+      expect(normalize).not.toHaveBeenCalled();
+      expect(thumbnails).not.toHaveBeenCalled();
+      const saved = await confirm(
+        id,
+        await send(id, intent({ startTime: '00:08:29', endTime: '00:08:29' })),
+      );
+      expect(saved.timeline.clips[0]).toMatchObject({ startFrame: 269, endFrame: 269 });
+      const [job] = await db
+        .insert(editJobs)
+        .values({
+          projectId: id,
+          revision: 1,
+          status: 'failed',
+          plan: {
+            version: 3,
+            revision: 1,
+            clips: saved.timeline.clips.map((c) => ({
+              ...c,
+              sourceKey: asset!.editingKey!,
+              sourceMode: 'original' as const,
+              hasAudio: false,
+            })),
+            output: { container: 'mp4', width: 320, height: 180 },
+          },
+        })
+        .returning();
+      await request(app.getHttpServer())
+        .delete(`/api/projects/${id}/clips/${saved.timeline.clips[0]!.id}`)
+        .set(auth())
+        .send({ requestId: randomUUID(), expectedRevision: 1 })
+        .expect(200);
+      await request(app.getHttpServer()).delete(`/api/media/${assetId}`).set(auth()).expect(204);
+      expect(await app.get(StorageService).exists(asset!.storageKey)).toBe(true);
+      await app.get(JobsService).retry(job!.id, owner);
+      await expect
+        .poll(async () => (await app.get(JobsService).get(job!.id, owner)).status, {
+          timeout: 20000,
+          interval: 100,
+        })
+        .toBe('succeeded');
+      const result = await app.get(JobsService).get(job!.id, owner);
+      expect(
+        await tools.probe(app.get(StorageService).resolve(result.outputKey!), true),
+      ).toMatchObject({ frameCount: 1, hasAudio: true });
+      await expect
+        .poll(() => app.get(StorageService).exists(asset!.storageKey), { timeout: 5000 })
+        .toBe(false);
+    } finally {
+      normalize.mockRestore();
+      thumbnails.mockRestore();
+    }
+  }, 40000);
+
+  it('exports original 44.1kHz AAC, silent originals and normalized sources with matching audio boundaries', async () => {
+    const tools = app.get(MediaTools),
+      storage = app.get(StorageService);
+    const silent = await videoFixture(path.join(root, 'direct-silent.mp4'), ['-g', '90'], 30, 4);
+    const source = path.join(root, 'direct-aac.mp4');
+    await execute(
+      tools.env.FFMPEG_PATH,
+      [
+        '-v',
+        'error',
+        '-y',
+        '-i',
+        silent,
+        '-f',
+        'lavfi',
+        '-i',
+        'sine=frequency=997:sample_rate=44100:duration=4',
+        '-map',
+        '0:v:0',
+        '-map',
+        '1:a:0',
+        '-c:v',
+        'copy',
+        '-c:a',
+        'aac',
+        '-af',
+        'aeval=if(lt(t\\,1.5)\\,0\\,val(0))',
+        '-ac',
+        '2',
+        source,
+      ],
+      { windowsHide: true },
+    );
+    const { assetId } = await create(await readFile(source));
+    const [asset] = await db.select().from(mediaAssets).where(eq(mediaAssets.id, assetId));
+    expect(asset!.editing?.kind).toBe('original');
+    const normalizedInput = storage.resolve('fixtures/mixed-normalized.mp4');
+    await tools.normalize(
+      silent,
+      normalizedInput,
+      await tools.probe(silent),
+      new AbortController().signal,
+      () => {},
+    );
+    const result = await app.get(FfmpegServerExecutor).execute({
+      jobId: randomUUID(),
+      plan: {
+        version: 3,
+        revision: 1,
+        clips: [
+          {
+            id: randomUUID(),
+            source: assetId,
+            generation: 1,
+            startFrame: 37,
+            endFrame: 70,
+            sourceKey: asset!.editingKey!,
+            sourceMode: 'original',
+            hasAudio: true,
+          },
+          {
+            id: randomUUID(),
+            source: assetId,
+            generation: 1,
+            startFrame: 10,
+            endFrame: 10,
+            sourceKey: path.relative(storage.root, silent).replaceAll('\\', '/'),
+            sourceMode: 'original',
+            hasAudio: false,
+          },
+          {
+            id: randomUUID(),
+            source: assetId,
+            generation: 1,
+            startFrame: 0,
+            endFrame: 29,
+            sourceKey: 'fixtures/mixed-normalized.mp4',
+            sourceMode: 'normalized',
+            hasAudio: true,
+          },
+        ],
+        output: { container: 'mp4', width: 320, height: 180 },
+      },
+    });
+    const output = storage.resolve(result.output);
+    expect(await tools.probe(output, true)).toMatchObject({ frameCount: 65, hasAudio: true });
+    const decoded = await execute(
+      tools.env.FFMPEG_PATH,
+      ['-v', 'error', '-i', output, '-vn', '-ac', '1', '-ar', '48000', '-f', 'f32le', 'pipe:1'],
+      { encoding: 'buffer', windowsHide: true },
+    );
+    const samples = new Float32Array(
+      decoded.stdout.buffer,
+      decoded.stdout.byteOffset,
+      decoded.stdout.byteLength / 4,
+    );
+    const rms = (begin: number, length: number) =>
+      Math.sqrt(samples.slice(begin, begin + length).reduce((n, x) => n + x * x, 0) / length);
+    expect(rms(2000, 4000)).toBeLessThan(0.005);
+    expect(rms(20000, 4000)).toBeGreaterThan(0.03);
+    expect(rms(34 * 1600 + 400, 600)).toBeLessThan(0.01);
+    expect(rms(40 * 1600, 4000)).toBeLessThan(0.005);
   }, 40000);
   it('concatenates mixed aspect ratios with black padding and continuous audio, preserving exact frame boundaries', async () => {
     const storage = app.get(StorageService),

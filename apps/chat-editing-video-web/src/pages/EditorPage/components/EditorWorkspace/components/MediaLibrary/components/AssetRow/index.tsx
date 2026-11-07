@@ -18,8 +18,40 @@ import { AssetScrubber } from './components/AssetScrubber';
 import { FrameImage } from './components/FrameImage';
 import styles from './index.module.less';
 import common from '../../../../../../../../styles/common.module.less';
+import { forgetTransfer, type Transfer } from '../../../../../../../../lib/media-upload';
+import { TransferRow } from '../TransferRow';
 
-export function AssetRow({ asset }: { asset: MediaAsset }) {
+export function AssetRow({
+  asset: savedAsset,
+  transfer,
+}: {
+  asset?: MediaAsset;
+  transfer?: Transfer;
+}) {
+  const asset: MediaAsset = savedAsset ?? {
+    id: transfer!.id,
+    projectId: '',
+    fileName: transfer!.file.name,
+    mimeType: transfer!.file.type,
+    sizeBytes: transfer!.file.size,
+    storageKey: '',
+    number: 0,
+    status: 'queued',
+    stage: '',
+    progress: 0,
+    error: null,
+    generation: 1,
+    deleting: false,
+    original: transfer!.preview ?? null,
+    normalized: null,
+    editing: null,
+    createdAt: new Date(0).toISOString(),
+  };
+  const info = asset.editing?.info ?? asset.normalized ?? transfer?.preview;
+  const localId =
+    transfer?.canPreview && (asset.status !== 'ready' || asset.editing?.kind === 'original')
+      ? transfer.id
+      : undefined;
   const [second, setSecond] = useState<number>();
   const [frame, setFrame] = useState<number>();
   const [deleting, setDeleting] = useState(false);
@@ -27,7 +59,7 @@ export function AssetRow({ asset }: { asset: MediaAsset }) {
   const frames = useQuery({
     queryKey: ['frames', asset.id, asset.generation, second],
     queryFn: ({ signal }) => api(ImageIndexSchema, ApiRoutes.frames(asset.id, second!), { signal }),
-    enabled: second !== undefined && asset.status === 'ready',
+    enabled: second !== undefined && Boolean(savedAsset) && asset.status === 'ready',
     refetchInterval: (q) => (q.state.data?.status === 'processing' ? 500 : false),
   });
   const large = useBlob(frame === undefined ? undefined : ApiRoutes.frameImage(asset.id, frame));
@@ -39,6 +71,9 @@ export function AssetRow({ asset }: { asset: MediaAsset }) {
   return (
     <div
       className={styles.assetRow}
+      data-testid="asset-row"
+      data-media-status={savedAsset?.status ?? 'uploading'}
+      data-source-kind={savedAsset?.editing?.kind}
       onBlur={(event) => {
         if (
           !event.currentTarget.contains(event.relatedTarget as Node | null) &&
@@ -47,50 +82,64 @@ export function AssetRow({ asset }: { asset: MediaAsset }) {
           setSecond(undefined);
       }}
     >
-      <div className={`${common.row} ${common.between}`}>
-        <strong>
-          V{asset.number} <span className={common.muted}>{asset.fileName}</span>
-        </strong>
-        <div className={common.row}>
-          <small>
-            {asset.normalized
-              ? formatTimecode(asset.normalized.frameCount!)
-              : `${Math.round(asset.sizeBytes / 1024 / 1024)} MB`}
-          </small>
-          <Button onClick={() => setDeleting(true)}>
-            {asset.deleting ? '重试删除' : `删除素材 V${asset.number}`}
-          </Button>
-        </div>
-      </div>
-      {asset.deleting ? (
-        <Notice kind="error">{asset.error ?? '删除未完成，请重试删除'}</Notice>
-      ) : asset.status !== 'ready' ? (
-        <>
-          <MediaProcessingState
-            source={`V${asset.number}`}
-            status={asset.status === 'failed' ? 'failed' : 'processing'}
-            reason={asset.error ?? undefined}
-            onRetry={async () => {
-              await api(MediaAssetSchema, ApiRoutes.mediaRetry(asset.id), { method: 'POST' });
-              await refresh();
-            }}
-            onDelete={async () => setDeleting(true)}
-          />
-          {asset.status !== 'failed' && (
-            <p role="status">
-              {asset.stage} · {asset.progress}% <progress max={100} value={asset.progress} />
-            </p>
-          )}
-        </>
+      {!savedAsset ? (
+        <TransferRow item={transfer!} />
       ) : (
+        <div className={`${common.row} ${common.between}`}>
+          <strong>
+            V{asset.number} <span className={common.muted}>{asset.fileName}</span>
+          </strong>
+          <div className={common.row}>
+            <small>
+              {info
+                ? formatTimecode(info.frameCount!)
+                : `${Math.round(asset.sizeBytes / 1024 / 1024)} MB`}
+            </small>
+            <Button onClick={() => setDeleting(true)}>
+              {asset.deleting ? '重试删除' : `删除素材 V${asset.number}`}
+            </Button>
+          </div>
+        </div>
+      )}
+      {savedAsset &&
+        (asset.deleting ? (
+          <Notice kind="error">{asset.error ?? '删除未完成，请重试删除'}</Notice>
+        ) : asset.status !== 'ready' ? (
+          <>
+            <MediaProcessingState
+              source={`V${asset.number}`}
+              status={asset.status === 'failed' ? 'failed' : 'processing'}
+              reason={asset.error ?? undefined}
+              onRetry={async () => {
+                await api(MediaAssetSchema, ApiRoutes.mediaRetry(asset.id), { method: 'POST' });
+                await refresh();
+              }}
+              onDelete={async () => setDeleting(true)}
+            />
+            {asset.status !== 'failed' && (
+              <p role="status">
+                {asset.stage} · {asset.progress}% <progress max={100} value={asset.progress} />
+              </p>
+            )}
+          </>
+        ) : null)}
+      {!asset.deleting && info && (asset.status === 'ready' || localId) && (
         <>
-          <AssetScrubber asset={asset} onSelect={setSecond} />
-          {second !== undefined && (
+          <AssetScrubber
+            asset={asset}
+            info={info}
+            localId={localId}
+            onSelect={asset.status === 'ready' ? setSecond : undefined}
+          />
+          {asset.status !== 'ready' && (
+            <small className={common.muted}>可预览，上传并校验完成后可确认剪辑</small>
+          )}
+          {second !== undefined && asset.status === 'ready' && (
             <div className={styles.expandedFrames}>
               <div className={`${common.row} ${common.between}`}>
                 <strong>
                   第 {second} 秒 · 帧编号 0～
-                  {Math.min(29, asset.normalized!.frameCount! - second * 30 - 1)}
+                  {Math.min(29, info.frameCount! - second * 30 - 1)}
                 </strong>
                 <Button onClick={() => setSecond(undefined)}>收起帧图</Button>
               </div>
@@ -136,6 +185,7 @@ export function AssetRow({ asset }: { asset: MediaAsset }) {
         onConfirm={async () => {
           try {
             await apiFetch(ApiRoutes.media(asset.id), { method: 'DELETE' });
+            if (transfer) forgetTransfer(transfer.id);
           } finally {
             await refresh();
           }

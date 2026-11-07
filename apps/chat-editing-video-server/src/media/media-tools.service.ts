@@ -3,11 +3,21 @@ import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
 import type { MediaInfo } from '@cev/shared';
+import { Input, FilePathSource, MP4, QTFF, EncodedPacketSink } from 'mediabunny';
 import { APP_CONFIG } from '../config/config.module.js';
 import type { Env } from '../config/env.js';
 
 export interface ProbeInfo extends MediaInfo {
   audioOffset: number;
+  codec: string;
+  pixelFormat: string;
+  squarePixels: boolean;
+  startTime: number;
+  videoStreams: number;
+  audioStreams: number;
+  audioCodec?: string;
+  sampleRate?: number;
+  channels?: number;
 }
 
 @Injectable()
@@ -103,6 +113,10 @@ export class MediaTools {
       format: { format_name: string; duration?: string };
       streams: Array<{
         codec_type: string;
+        codec_name?: string;
+        pix_fmt?: string;
+        sample_rate?: string;
+        channels?: number;
         width?: number;
         height?: number;
         duration?: string;
@@ -150,7 +164,88 @@ export class MediaTools {
       ...(frameCount && Number.isFinite(frameCount) ? { frameCount } : {}),
       audioOffset:
         Number(audio?.start_time ?? video.start_time ?? 0) - Number(video.start_time ?? 0),
+      codec: video.codec_name ?? '',
+      pixelFormat: video.pix_fmt ?? '',
+      squarePixels: !video.sample_aspect_ratio || video.sample_aspect_ratio === '1:1',
+      startTime: Number(video.start_time ?? 0),
+      videoStreams: data.streams.filter((s) => s.codec_type === 'video').length,
+      audioStreams: data.streams.filter((s) => s.codec_type === 'audio').length,
+      audioCodec: audio?.codec_name,
+      sampleRate: audio ? Number(audio.sample_rate) : undefined,
+      channels: audio?.channels,
     };
+  }
+
+  /** Read packet metadata, never decode/count the entire video to test CFR. */
+  async directInfo(file: string, info: ProbeInfo, signal: AbortSignal): Promise<MediaInfo | null> {
+    if (
+      info.codec !== 'h264' ||
+      info.pixelFormat !== 'yuv420p' ||
+      info.hdr ||
+      info.rotation !== 0 ||
+      !info.squarePixels ||
+      Math.abs(info.startTime) > 1e-6 ||
+      info.videoStreams !== 1 ||
+      info.audioStreams > 1 ||
+      Math.max(info.width, info.height) > 1920 ||
+      info.width % 2 ||
+      info.height % 2 ||
+      (info.hasAudio &&
+        (info.audioCodec !== 'aac' ||
+          ![44100, 48000].includes(info.sampleRate ?? 0) ||
+          ![1, 2].includes(info.channels ?? 0) ||
+          Math.abs(info.audioOffset) > 1e-6))
+    )
+      return null;
+    const input = new Input({ formats: [MP4, QTFF], source: new FilePathSource(file) });
+    try {
+      const track = await input.getPrimaryVideoTrack();
+      if (!track || Math.abs(await track.getFirstTimestamp()) > 1e-6) return null;
+      const times: number[] = [];
+      for await (const packet of new EncodedPacketSink(track).packets(undefined, undefined, {
+        metadataOnly: true,
+      })) {
+        signal.throwIfAborted();
+        if (Math.abs(packet.duration - 1 / 30) > 1e-4) return null;
+        times.push(packet.timestamp);
+      }
+      times.sort((a, b) => a - b);
+      if (
+        !times.length ||
+        times.some((t, i) => Math.abs(t - i / 30) > 1e-4) ||
+        Math.abs(info.duration - times.length / 30) > 1e-4
+      )
+        return null;
+      // Verify the decoder can read an actual picture; container metadata alone is insufficient.
+      await this.run(
+        this.env.FFMPEG_PATH,
+        [
+          '-v',
+          'error',
+          '-nostdin',
+          '-threads',
+          '1',
+          '-i',
+          file,
+          '-map',
+          '0:v:0',
+          '-frames:v',
+          '1',
+          '-an',
+          '-f',
+          'null',
+          '-',
+        ],
+        signal,
+      );
+      return { ...info, duration: times.length / 30, frameCount: times.length };
+    } catch (error) {
+      signal.throwIfAborted();
+      this.logger.debug(`原片直读检查回退: ${String(error)}`);
+      return null;
+    } finally {
+      input.dispose();
+    }
   }
 
   async normalize(
@@ -249,9 +344,19 @@ export class MediaTools {
     );
   }
 
-  async thumbnails(input: string, prefix: string, count: number, signal: AbortSignal) {
+  async thumbnails(
+    input: string,
+    prefix: string,
+    count: number,
+    signal: AbortSignal,
+    onlyPage?: number,
+  ) {
     await mkdir(prefix, { recursive: true });
-    for (let page = 0; page < Math.ceil(count / 900); page++) {
+    for (
+      let page = onlyPage ?? 0;
+      page < (onlyPage === undefined ? Math.ceil(count / 900) : onlyPage + 1);
+      page++
+    ) {
       const frames = Math.min(30, Math.ceil((count - page * 900) / 30));
       await this.run(
         this.env.FFMPEG_PATH,

@@ -41,8 +41,23 @@ export const RenderPlanSchema = z.object({
   }),
 });
 export type RenderPlan = z.infer<typeof RenderPlanSchema>;
+export const DirectRenderPlanSchema = RenderPlanSchema.extend({
+  version: z.literal(3),
+  clips: z
+    .array(
+      FrameClipSchema.safeExtend({
+        sourceKey: z.string().min(1),
+        sourceMode: z.enum(['original', 'normalized']),
+        hasAudio: z.boolean(),
+      }),
+    )
+    .min(1)
+    .max(100),
+});
+export type DirectRenderPlan = z.infer<typeof DirectRenderPlanSchema>;
 export const EditPlanSchema = z.discriminatedUnion('version', [
   LegacyEditPlanSchema,
   RenderPlanSchema,
+  DirectRenderPlanSchema,
 ]);
 export type EditPlan = z.infer<typeof EditPlanSchema>;

@@ -27,7 +27,7 @@ import { ProjectsService } from '../../src/projects/projects.service.js';
 import { StorageService } from '../../src/storage/storage.service.js';
 import { videoFixture } from '../support/video.js';
 import { MediaTools } from '../../src/media/media-tools.service.js';
-import { MediaProcessing, MEDIA_QUEUE } from '../../src/media/media-processing.service.js';
+import { MediaProcessing, MEDIA_INDEX_QUEUE } from '../../src/media/media-processing.service.js';
 
 /** Real PostgreSQL/Redis; unique test accounts and isolated, disposable file storage. */
 describe('authenticated API integration', () => {
@@ -444,6 +444,17 @@ describe('authenticated API integration', () => {
     );
     const asset = results[0]!.body.asset;
     await waitAsset(account.token, projectId, asset.id);
+    await expect
+      .poll(
+        async () =>
+          (
+            await request(app.getHttpServer())
+              .get(`/api/media/${asset.id}/thumbnails?page=0`)
+              .set(auth(account.token))
+          ).body.status,
+        { timeout: 8000, interval: 100 },
+      )
+      .toBe('ready');
     const thumbs = await request(app.getHttpServer())
       .get(`/api/media/${asset.id}/thumbnails?page=0`)
       .set(auth(account.token))
@@ -479,7 +490,7 @@ describe('authenticated API integration', () => {
       'error',
       '-y',
       '-i',
-      app.get(StorageService).resolve(row!.normalizedKey!),
+      app.get(StorageService).resolve(row!.editingKey!),
       '-vf',
       'select=eq(n\\,35)',
       '-frames:v',
@@ -580,6 +591,7 @@ describe('authenticated API integration', () => {
     const account = await signIn();
     const projectId = await createProject(account);
     const tools = app.get(MediaTools);
+    vi.spyOn(tools, 'directInfo').mockResolvedValueOnce(null);
     const fail = vi
       .spyOn(tools, 'normalize')
       .mockRejectedValueOnce(new Error('test encoder failure'));
@@ -627,6 +639,7 @@ describe('authenticated API integration', () => {
     const began = new Promise<void>((resolve) => {
       started = resolve;
     });
+    vi.spyOn(tools, 'directInfo').mockResolvedValueOnce(null);
     const delay = vi.spyOn(tools, 'normalize').mockImplementationOnce(async (...args) => {
       started();
       await new Promise<void>((resolve) =>
@@ -660,7 +673,7 @@ describe('authenticated API integration', () => {
   it('recovers a persisted interrupted run whose Redis job has been lost', async () => {
     const account = await signIn();
     const projectId = await createProject(account);
-    const queue = app.get<Queue>(getQueueToken(MEDIA_QUEUE));
+    const queue = app.get<Queue>(getQueueToken(MEDIA_INDEX_QUEUE));
     await queue.pause();
     let asset: { id: string; number: number };
     try {

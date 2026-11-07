@@ -12,7 +12,14 @@ import {
   uuid,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
-import type { EditPlan, MediaInfo, Timeline, EditOperation, Proposal } from '@cev/shared';
+import type {
+  EditPlan,
+  EditingMedia,
+  MediaInfo,
+  Timeline,
+  EditOperation,
+  Proposal,
+} from '@cev/shared';
 
 const timestamps = {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -87,6 +94,8 @@ export const mediaAssets = pgTable(
     original: jsonb('original').$type<MediaInfo>(),
     normalized: jsonb('normalized').$type<MediaInfo>(),
     normalizedKey: text('normalized_key'),
+    editing: jsonb('editing').$type<EditingMedia>(),
+    editingKey: text('editing_key'),
     derivedPrefix: text('derived_prefix'),
     createdAt: timestamps.createdAt,
   },
@@ -123,6 +132,7 @@ export const mediaRuns = pgTable(
     generation: integer('generation').notNull(),
     executionId: uuid('execution_id'),
     queuePrefix: text('queue_prefix').notNull().default('bull'),
+    phase: text('phase').notNull().default('index'),
     status: text('status').notNull().default('queued'),
     error: text('error'),
     ...timestamps,

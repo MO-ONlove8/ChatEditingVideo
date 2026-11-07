@@ -43,6 +43,7 @@ async function install(page: Page, failImages = false) {
   let deletions = 0;
   let smallAttempts = 0;
   let fullAttempts = 0;
+  let withTimeline = false;
   await page.addInitScript((value) => sessionStorage.setItem('cev-session', value), token);
   await page.route('**/api/**', async (route) => {
     const req = route.request();
@@ -61,6 +62,30 @@ async function install(page: Page, failImages = false) {
     if (endpoint === '/projects') return route.fulfill({ json: assets.length ? [project] : [] });
     if (endpoint === `/projects/${projectId}`) return route.fulfill({ json: project });
     if (endpoint === `/projects/${projectId}/media`) return route.fulfill({ json: assets });
+    if (endpoint === `/projects/${projectId}/editor-state`)
+      return route.fulfill({
+        json: {
+          project,
+          timeline: {
+            revision: withTimeline ? 1 : 0,
+            fps: 30,
+            canvas: withTimeline ? { width: 320, height: 180 } : null,
+            clips: withTimeline
+              ? [
+                  {
+                    id: '00000000-0000-4000-8000-000000000109',
+                    source: (assets[0] as { id: string }).id,
+                    generation: 1,
+                    startFrame: 0,
+                    endFrame: 35,
+                  },
+                ]
+              : [],
+          },
+          turns: [],
+          nextCursor: null,
+        },
+      });
     if (endpoint === '/uploads') {
       const input = req.postDataJSON();
       const result = input.files.map((f: { id: string; fileName: string; sizeBytes: number }) => {
@@ -149,7 +174,8 @@ async function install(page: Page, failImages = false) {
   return {
     pending,
     deletions: () => deletions,
-    async save(index: number) {
+    async save(index: number, original = false, timeline = false) {
+      withTimeline = timeline;
       const route = pending[index]!;
       const id = /uploads\/([^/]+)/.exec(route.request().url())![1]!;
       const item = uploads.get(id)!;
@@ -178,6 +204,11 @@ async function install(page: Page, failImages = false) {
         },
         createdAt: new Date().toISOString(),
       };
+      if (original)
+        Object.assign(asset, {
+          editing: { kind: 'original', info: { ...asset.normalized, hasAudio: false } },
+          normalized: null,
+        });
       assets.push(asset);
       item.asset = asset;
       item.status = 'saved';
@@ -329,6 +360,63 @@ test('cancel and leave aborts pending transfers without creating an empty task',
   await expect(page).toHaveURL(/\/tasks$/);
   await expect.poll(api.deletions).toBe(1);
   await expect(page.getByText('还没有剪辑任务')).toBeVisible();
+});
+
+test('previews the local file during upload, preserves its position when saved and falls back to the server after reload', async ({
+  page,
+}) => {
+  const api = await install(page);
+  let thumbnailRequests = 0;
+  page.on('request', (request) => {
+    if (request.url().includes('/thumbnails?')) thumbnailRequests++;
+  });
+  await page.goto('/tasks/new');
+  await page.getByLabel('选择视频素材').setInputFiles(file);
+  await expect.poll(() => api.pending.length).toBe(1);
+  await page.getByTestId('local-thumbnail').first().scrollIntoViewIfNeeded();
+  await expect(page.getByTestId('local-thumbnail').first()).toHaveAttribute('data-loaded', 'true');
+  expect(thumbnailRequests).toBe(0);
+  const slider = page.getByRole('slider', { name: 'V0 素材播放位置' });
+  await slider.focus();
+  await slider.press('ArrowRight');
+  await slider.press('ArrowRight');
+  const preview = page.getByRole('region', { name: 'V0 素材预览' });
+  await expect
+    .poll(() => preview.locator('video').evaluate((video: HTMLVideoElement) => video.readyState))
+    .toBeGreaterThanOrEqual(2);
+  await expect(slider).toHaveAttribute('aria-valuenow', '2');
+  await expect(page.getByText('可预览，上传并校验完成后可确认剪辑')).toBeVisible();
+  await api.save(0, true, true);
+  await expect(page).toHaveURL(new RegExp(`/tasks/${projectId}/edit$`));
+  const savedSlider = page.getByRole('slider', { name: 'V1 素材播放位置' });
+  await expect(savedSlider).toHaveAttribute('aria-valuenow', '2');
+  await expect(page.getByTestId('asset-row')).toHaveCount(1);
+  await expect(page.getByRole('region', { name: 'V1 素材预览' }).locator('video')).toBeVisible();
+  await page.getByRole('button', { name: '播放素材预览', exact: true }).click();
+  await expect.poll(() => savedSlider.getAttribute('aria-valuenow')).not.toBe('2');
+  await page.getByRole('button', { name: '暂停素材预览', exact: true }).click();
+  await expect(page.getByRole('region', { name: '主视频预览' }).locator('canvas')).toBeVisible();
+  await expect(page.getByText('预览加载失败', { exact: false })).not.toBeVisible();
+  await page.reload();
+  await expect(page.getByTestId('local-thumbnail')).toHaveCount(0);
+  await page.getByRole('button', { name: '播放素材 V1' }).click();
+  await expect(page.getByRole('region', { name: 'V1 素材预览' }).locator('canvas')).toBeVisible();
+  await expect.poll(() => thumbnailRequests).toBeGreaterThan(0);
+});
+
+test('cancelling an upload releases its local decoder and closes the preview', async ({ page }) => {
+  const api = await install(page);
+  await page.goto('/tasks/new');
+  await page.getByLabel('选择视频素材').setInputFiles(file);
+  await expect.poll(() => api.pending.length).toBe(1);
+  await page.getByRole('button', { name: '播放素材 V0' }).click();
+  await expect(page.getByRole('region', { name: 'V0 素材预览' })).toBeVisible();
+  expect(page.workers()).toHaveLength(1);
+  await page.getByRole('button', { name: '取消上传', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'V0 素材预览' })).not.toBeVisible();
+  await expect.poll(() => page.workers().length).toBe(0);
+  await expect.poll(api.deletions).toBe(1);
+  await expect(page).toHaveURL(/\/tasks\/new$/);
 });
 
 test('rejects an invalid file before reserving or uploading', async ({ page }) => {
