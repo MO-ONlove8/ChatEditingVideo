@@ -10,26 +10,80 @@
 | `packages/shared`                 | 三端共用契约：zod schema、API 路由、IPC 通道、`EditExecutor` 接口、SSE 工具                        |
 | `e2e`                             | Playwright：Web（mock API）+ Electron（真实桌面应用）                                              |
 
-## 环境要求
+## 本地运行
 
-- Node 24（见 `.nvmrc`）：`nvm install 24.22.2 && nvm use 24.22.2`
-- pnpm 9：`corepack enable && corepack prepare pnpm@9.15.9 --activate`
-- Docker Desktop（运行 PostgreSQL / Redis）
-- FFmpeg / FFprobe（需含 libx264、AAC、zscale、tonemap；通过 PATH 或 `.env` 配置可执行文件路径）
-- Ollama，已拉取 `qwen3:8b`（对话剪辑使用；登录、上传、素材处理和已保存结果播放不依赖 Ollama）
+以下以 Windows PowerShell 为例，桌面端支持 Windows x64。先安装：
 
-## 快速开始
+- [Node.js](https://nodejs.org/) **24.22.2**，以及 pnpm **9.15.9**（`npm install -g pnpm@9.15.9`）。
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/)，安装后启动，用于运行 PostgreSQL / Redis。
+- [FFmpeg / FFprobe](https://ffmpeg.org/download.html) 完整构建，建议 6.1 或更新版本，支持 libx264 / AAC、zscale / tonemap 和 `-display_rotation`。将其 `bin` 目录加入 PATH，确保终端可执行 `ffmpeg -version` 和 `ffprobe -version`。
+- [Ollama](https://ollama.com/download)，安装后启动，用于本地模型推理。
 
-```bash
-pnpm install
-cp .env.example apps/chat-editing-video-server/.env
-pnpm db:up          # 启动 PostgreSQL + Redis（docker compose）
-pnpm db:migrate     # 执行数据库迁移
-pnpm db:seed        # 可选：示例数据
-pnpm dev            # 同时启动 server(:3000) + web(:5173) + desktop
+### 1. 拉取项目并配置
+
+以下命令均在项目根目录执行：
+
+```powershell
+git clone --branch dev https://github.com/MO-ONlove8/ChatEditingVideo.git
+cd ChatEditingVideo
+pnpm install --frozen-lockfile
+Copy-Item .env.example apps/chat-editing-video-server/.env
 ```
 
-只跑浏览器版：分别在两个终端运行 `pnpm dev:server` 和 `pnpm dev:web`，打开 http://localhost:5173 。
+`.env` 默认配置已匹配本项目的数据库和本地模型，无需另外申请 API Key。如果 FFmpeg 未加入 PATH，将 `.env` 中的 `FFMPEG_PATH`、`FFPROBE_PATH` 改成各自可执行文件的绝对路径，例如 `C:/Tools/ffmpeg/bin/ffmpeg.exe` 和 `C:/Tools/ffmpeg/bin/ffprobe.exe`。已有 `.env` 时不要重复覆盖。
+
+### 2. 准备本地模型
+
+保持 Ollama 运行，首次下载并测试模型：
+
+```powershell
+ollama pull qwen3:8b
+ollama run qwen3:8b "请用中文回复：模型运行正常"
+```
+
+若无法连接 Ollama，先启动 Ollama 应用，或在另一个终端运行 `ollama serve`；已运行时无需重复启动。模型下载后保存在本机，以后不用重复下载。
+
+服务端 `.env` 默认使用：
+
+```dotenv
+LLM_BASE_URL=http://localhost:11434/v1
+LLM_API_KEY=ollama
+LLM_MODEL=qwen3:8b
+```
+
+若对话剪辑出现 GPU / CUDA 初始化错误，在服务端 `.env` 设置 `LLM_OLLAMA_CPU=true` 并重启服务端，让项目使用本机 Ollama 的 CPU 推理。此设置不改变 `ollama run` 的行为；CPU 推理较慢，必要时增大 `LLM_TIMEOUT_MS`（默认 180000 毫秒，即 3 分钟）。
+
+### 3. 初始化数据库并启动
+
+确认 Docker Desktop 已启动：
+
+```powershell
+pnpm db:up
+docker compose -f docker/docker-compose.yml ps
+```
+
+等待 PostgreSQL 和 Redis 显示 `healthy`，再执行：
+
+```powershell
+pnpm db:migrate
+pnpm dev
+```
+
+`pnpm dev` 同时启动 API（3000）、Web（5173）和 Electron 桌面窗口。只用浏览器时，改为在两个终端分别运行 `pnpm dev:server`、`pnpm dev:web`，打开 [登录页](http://localhost:5173/login)。**仅运行 `pnpm dev:web` 不会启动 API。**
+
+### 4. 登录并使用
+
+输入符合规则的 11 位大陆手机号，先获取验证码，再用固定测试码 **123456** 登录；不发送短信，首次登录自动创建账号，无需执行 `pnpm db:seed`。
+
+新建任务，上传 MP4 / MOV，待素材可编辑后发送剪辑指令，例如“把 V1 的第 5 秒到第 8 秒追加到主视频末尾”（素材需超过 8 秒）。出现确认卡后确认保存，即可预览并生成下载成品。
+
+若启动异常，可访问 [健康检查](http://localhost:3000/api/health)，完整体验要求 `database`、`redis`、`llm` 均为 `up`。其中 `llm: up` 只说明 Ollama 接口可访问，实际模型能否推理需通过上面的模型测试和项目中的剪辑指令验证。
+
+### 以后启动
+
+保持 Docker Desktop 和 Ollama 运行，在项目根目录执行 `pnpm db:up`、`pnpm dev` 即可。拉取更新后执行 `pnpm install --frozen-lockfile` 和 `pnpm db:migrate`，再启动应用。
+
+项目不会自动安装或启动 Ollama，也不会自动下载模型。桌面端的视频处理和导出依赖服务端，使用期间保持服务端运行；修改 `.env` 后需重启服务端。停止项目按 `Ctrl+C`；停止数据库 / Redis 用 `pnpm db:down`，会保留数据库数据卷。
 
 ## 常用命令
 
@@ -101,7 +155,7 @@ CI 使用 runner 自己的临时数据库、Redis 和文件目录，不需要配
 
 ## 上传与素材查看验收
 
-1. 启动 PostgreSQL / Redis，运行 `pnpm db:migrate`，确认 FFmpeg 和 FFprobe 可执行，再运行 `pnpm dev:web` 或 `pnpm dev`。
+1. 按上文“本地运行”准备环境。启动 PostgreSQL / Redis 并执行 `pnpm db:migrate`，确认 FFmpeg 和 FFprobe 可执行；浏览器模式分别启动 `pnpm dev:server` 和 `pnpm dev:web`，桌面模式运行 `pnpm dev`。
 2. 访问 `/login`，获取测试验证码并以 `123456` 登录。进入“新建”，选择或拖入 MP4 / MOV；首个文件保存后自动进入已保存任务。
 3. 上传期间即可拖动素材预览；原片通过快速检查后可直接剪辑，特殊格式等待兼容转换。点击某秒查看帧图，放大并复制时间。最后一秒只显示实际帧数。
 4. 上传中返回列表，可选择继续上传或取消并离开。已保存素材在后台继续处理；任务与素材删除均需确认，失败可重试。
@@ -120,7 +174,7 @@ CI 使用 runner 自己的临时数据库、Redis 和文件目录，不需要配
 6. 导出为 30 fps H.264 MP4，AAC 原声。16:9 为 1920×1080，9:16 为 1080×1920，其他比例最长边 1920。主视频最多 100 个 Clip、54000 帧（30 分钟）。
 7. 当前时间轴引用的素材禁止删除；解除引用后可从素材库删除。旧生成仍需要的原片或处理文件保留，失败可重试，成功或删除整个任务后清理。新生成使用 v3 不可变快照，兼容已有 v2；原片音频在导出时重采样为 48 kHz，无音轨补静音。
 
-本地 Ollama 的 GPU 推理无法初始化时，可在服务端环境文件设置 `LLM_OLLAMA_CPU=true` 并重启服务端，以同一模型通过本地 Ollama CPU 模式推理。默认关闭，模型调用超时由 `LLM_TIMEOUT_MS` 配置（默认 180000）。此配置不会修改 Ollama 的系统设置。
+本地模型配置及 GPU 异常时的 CPU 模式见上文“准备本地模型”。
 
 真实联调设置 `CEV_E2E_REAL_API=1` 后，除素材流程外还会验证真实模型理解、待确认恢复、鉴权视频预览、MP4 下载和 Electron 原生保存。服务端集成测试使用固定模型响应验证保存/并发/错误规则，视频处理与导出运行真实 FFmpeg。
 
