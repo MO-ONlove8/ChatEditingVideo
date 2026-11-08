@@ -11,6 +11,7 @@ export type ExecutorKind = 'desktop' | 'server';
 
 export interface ExecuteOptions {
   jobId: string;
+  executionId?: string;
   plan: EditPlan;
   onEvent?: (event: JobEvent) => void;
   signal?: AbortSignal;

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { FrameClipSchema } from '../timeline.js';
 
 /**
  * An EditPlan is what the chat/LLM produces: a declarative timeline.
@@ -21,9 +22,42 @@ export const OutputSpecSchema = z.object({
   height: z.number().int().positive().optional(),
 });
 
-export const EditPlanSchema = z.object({
+export const LegacyEditPlanSchema = z.object({
   version: z.literal(1),
   clips: z.array(ClipSchema).min(1),
   output: OutputSpecSchema.default({ container: 'mp4' }),
 });
+export const RenderPlanSchema = z.object({
+  version: z.literal(2),
+  revision: z.number().int().nonnegative(),
+  clips: z
+    .array(FrameClipSchema.safeExtend({ sourceKey: z.string().min(1) }))
+    .min(1)
+    .max(100),
+  output: z.object({
+    container: z.literal('mp4'),
+    width: z.number().int().positive(),
+    height: z.number().int().positive(),
+  }),
+});
+export type RenderPlan = z.infer<typeof RenderPlanSchema>;
+export const DirectRenderPlanSchema = RenderPlanSchema.extend({
+  version: z.literal(3),
+  clips: z
+    .array(
+      FrameClipSchema.safeExtend({
+        sourceKey: z.string().min(1),
+        sourceMode: z.enum(['original', 'normalized']),
+        hasAudio: z.boolean(),
+      }),
+    )
+    .min(1)
+    .max(100),
+});
+export type DirectRenderPlan = z.infer<typeof DirectRenderPlanSchema>;
+export const EditPlanSchema = z.discriminatedUnion('version', [
+  LegacyEditPlanSchema,
+  RenderPlanSchema,
+  DirectRenderPlanSchema,
+]);
 export type EditPlan = z.infer<typeof EditPlanSchema>;

@@ -63,4 +63,10 @@ export class StorageService {
   async remove(key: string): Promise<void> {
     await rm(this.resolve(key), { force: true });
   }
+
+  async removeTree(key: string): Promise<void> {
+    const target = this.resolve(key);
+    if (target === this.root) throw new Error('Cannot remove storage root');
+    await rm(target, { recursive: true, force: true });
+  }
 }

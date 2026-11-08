@@ -1,16 +1,23 @@
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { BrowserWindow, app, net, protocol, shell } from 'electron';
 import { APP_ORIGIN, APP_SCHEME, resolveAppFile } from './app-protocol.js';
 import { registerIpc } from './ipc.js';
+import { IpcChannels } from '@cev/shared';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
 /** Dev: the web app's Vite server. Unset (or empty) in production/preview builds. */
 const DEV_URL = (!app.isPackaged && process.env.ELECTRON_RENDERER_URL) || undefined;
 const API_BASE_URL = process.env.CEV_API_BASE_URL || 'http://localhost:3000/api';
+const closeGuard = { enabled: false, confirmed: false };
+// Isolate development/test profiles from the user's installed application.
+if (!app.isPackaged && process.env.CEV_USER_DATA_DIR) {
+  mkdirSync(process.env.CEV_USER_DATA_DIR, { recursive: true });
+  app.setPath('userData', process.env.CEV_USER_DATA_DIR);
+}
 
 /** Packaged: resources/web (electron-builder extraResources). Unpackaged: the web app's dist. */
 const WEB_DIST = app.isPackaged
@@ -30,8 +37,9 @@ const CSP = [
   "script-src 'self'",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
-  "media-src 'self' blob:",
-  `connect-src 'self' ${new URL(API_BASE_URL).origin}`,
+  "media-src 'self' blob: data:",
+  "worker-src 'self' blob:",
+  `connect-src 'self' blob: ${new URL(API_BASE_URL).origin}`,
 ].join('; ');
 
 function registerAppProtocol() {
@@ -65,6 +73,7 @@ async function createWindow() {
     minHeight: 600,
     title: 'Chat Editing Video',
     show: false,
+    frame: false,
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(here, '../preload/index.cjs'),
@@ -76,6 +85,12 @@ async function createWindow() {
   });
 
   win.once('ready-to-show', () => win.show());
+  win.on('close', (event) => {
+    if (closeGuard.enabled && !closeGuard.confirmed) {
+      event.preventDefault();
+      win.webContents.send(IpcChannels.closeRequested);
+    }
+  });
 
   // Open external links in the system browser; never spawn in-app windows.
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -84,7 +99,11 @@ async function createWindow() {
   });
   const allowedOrigin = DEV_URL ? new URL(DEV_URL).origin : APP_ORIGIN;
   win.webContents.on('will-navigate', (event, url) => {
-    if (new URL(url).origin !== allowedOrigin) event.preventDefault();
+    const parsed = new URL(url);
+    // Node's URL reports "null" for the privileged app scheme.
+    const origin =
+      parsed.protocol === `${APP_SCHEME}:` ? `${parsed.protocol}//${parsed.host}` : parsed.origin;
+    if (origin !== allowedOrigin) event.preventDefault();
   });
 
   await loadWithRetry(win, DEV_URL ?? `${APP_ORIGIN}/`);
@@ -113,6 +132,8 @@ if (!app.requestSingleInstanceLock()) {
       },
       outputDir: path.join(app.getPath('videos'), 'ChatEditingVideo'),
       devOrigin: DEV_URL ? new URL(DEV_URL).origin : undefined,
+      sessionDir: app.getPath('userData'),
+      closeGuard,
     });
     await createWindow();
   });

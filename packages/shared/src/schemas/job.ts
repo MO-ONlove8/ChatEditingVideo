@@ -12,6 +12,8 @@ export const EditJobSchema = z.object({
   plan: EditPlanSchema,
   outputKey: z.string().nullable(),
   error: z.string().nullable(),
+  revision: z.number().int().nullable().default(null),
+  generation: z.number().int().default(1),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
@@ -19,7 +21,8 @@ export type EditJob = z.infer<typeof EditJobSchema>;
 
 export const CreateEditJobSchema = z.object({
   projectId: z.uuid(),
-  plan: EditPlanSchema,
+  expectedRevision: z.number().int().nonnegative(),
+  requestId: z.uuid(),
 });
 export type CreateEditJobInput = z.infer<typeof CreateEditJobSchema>;
 

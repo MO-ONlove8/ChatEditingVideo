@@ -1,0 +1,92 @@
+.appShell {
+  height: 100dvh;
+  min-width: 760px;
+  display: flex;
+  flex-direction: column;
+}
+.titlebar {
+  height: 64px;
+  min-height: 64px;
+  padding: 0 24px;
+  background: #fff;
+  border-bottom: 1px solid #d2d6dd;
+  display: flex;
+  align-items: center;
+  gap: 40px;
+  -webkit-app-region: drag;
+  user-select: none;
+}
+.titlebar a,
+.titlebar button {
+  -webkit-app-region: no-drag;
+}
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 23px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.brandIcon {
+  width: 29px;
+  height: 29px;
+  display: grid;
+  place-items: center;
+  border-radius: 3px;
+  color: #fff;
+  background: #393e45;
+  font-size: 19px;
+}
+.titlebarSubtitle {
+  color: #7a828f;
+  white-space: nowrap;
+}
+.titlebarActions {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+  gap: 16px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.titlebarActions > button {
+  padding: 4px 8px;
+  min-height: 28px;
+}
+.windowActions {
+  display: flex;
+  margin-right: -14px;
+}
+.windowActions button {
+  height: 44px;
+  width: 42px;
+  border: 0;
+  background: transparent;
+  color: #7a828f;
+  font-size: 20px;
+}
+.windowActions button:hover {
+  background: #e9ebee;
+}
+.windowActions button:last-child:hover {
+  background: #393e45;
+  color: white;
+}
+.appContent {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+}
+@media (max-width: 1100px) {
+  .titlebar {
+    padding: 0 16px;
+    gap: 24px;
+  }
+  .titlebarActions {
+    gap: 10px;
+  }
+  .titlebarSubtitle {
+    font-size: 12px;
+  }
+}

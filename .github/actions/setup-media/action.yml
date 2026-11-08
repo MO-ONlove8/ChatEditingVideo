@@ -1,0 +1,25 @@
+name: Set up media tools
+description: Install Ubuntu 24.04 FFmpeg and fonts and verify required capabilities.
+runs:
+  using: composite
+  steps:
+    - name: Install FFmpeg and fonts
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install --no-install-recommends -y ffmpeg fonts-dejavu-core
+    - name: Check FFmpeg capabilities
+      shell: bash
+      run: |
+        ffmpeg -version
+        ffprobe -version
+        media_encoders="$(ffmpeg -hide_banner -encoders 2>&1)"
+        media_filters="$(ffmpeg -hide_banner -filters 2>&1)"
+        media_options="$(ffmpeg -hide_banner -h full 2>&1)"
+        for encoder in libx264 aac; do
+          grep -Eq "[[:space:]]${encoder}[[:space:]]" <<< "$media_encoders"
+        done
+        for filter in drawtext zscale tonemap; do
+          grep -Eq "[[:space:]]${filter}[[:space:]]" <<< "$media_filters"
+        done
+        grep -q -- '-display_rotation' <<< "$media_options"

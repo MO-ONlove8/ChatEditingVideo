@@ -1,0 +1,29 @@
+.statesGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 28px;
+}
+.statesGrid > section {
+  padding: 24px;
+}
+.statesGrid > section > button {
+  margin-right: 10px;
+}
+.statesGrid > section > img {
+  max-height: 280px;
+}
+.previewToolbar {
+  display: flex;
+  justify-content: space-between;
+  margin: 22px 0;
+}
+.previewToolbar label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+@media (max-width: 1100px) {
+  .statesGrid {
+    gap: 18px;
+  }
+}

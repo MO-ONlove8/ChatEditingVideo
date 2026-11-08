@@ -1,0 +1,104 @@
+.loginPage {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 36px 20px 24px;
+}
+.loginCard {
+  width: 550px;
+  max-width: 100%;
+  padding: 40px 46px;
+}
+.loginCard h1 {
+  font-size: 32px;
+  margin-bottom: 6px;
+}
+.loginSubtitle {
+  font-size: 17px;
+  margin-bottom: 34px;
+}
+.loginCard label {
+  font-size: 17px;
+  margin: 24px 0 9px;
+}
+.phoneInput {
+  display: flex;
+  align-items: center;
+  border: 1px solid #d2d6dd;
+  border-radius: 3px;
+  padding-left: 16px;
+  font-size: 17px;
+}
+.phoneInput span {
+  color: #7a828f;
+}
+.phoneInput input {
+  width: 100%;
+  border: 0 !important;
+  padding: 14px !important;
+  border: 0px;
+
+  &:focus-visible {
+    outline: none;
+  }
+}
+.codeRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 158px;
+  gap: 12px;
+}
+.codeRow input {
+  font-size: 16px;
+  padding: 15px 13px !important;
+
+  &:focus-visible {
+    outline: none;
+  }
+}
+.testCode {
+  margin: 20px 0 0;
+  background: #eceef0;
+  color: #7a828f;
+  padding: 12px 14px;
+}
+.loginSubmit {
+  width: 100%;
+  font-size: 19px;
+  min-height: 52px;
+  margin-top: 32px;
+}
+.loginHints {
+  color: #7a828f;
+  margin-top: 30px;
+}
+.loginHints p {
+  margin-bottom: 4px;
+}
+.loginTagline {
+  margin: 48px 0 0;
+  font-size: 16px;
+}
+@media (max-height: 850px) {
+  .loginPage {
+    justify-content: flex-start;
+    padding-top: 24px;
+  }
+  .loginCard {
+    padding-top: 28px;
+    padding-bottom: 28px;
+  }
+  .loginSubtitle {
+    margin-bottom: 22px;
+  }
+  .loginCard label {
+    margin-top: 16px;
+  }
+  .loginHints {
+    margin-top: 20px;
+  }
+  .loginTagline {
+    margin-top: 24px;
+  }
+}

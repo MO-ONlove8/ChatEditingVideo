@@ -14,14 +14,29 @@ export const EnvSchema = z.object({
   CORS_ORIGINS: csv.default(['http://localhost:5173', 'app://local']),
   DATABASE_URL: z.url({ protocol: /^postgres(ql)?$/ }),
   REDIS_URL: z.url({ protocol: /^rediss?$/ }),
+  QUEUE_PREFIX: z
+    .string()
+    .regex(/^[a-zA-Z0-9_-]+$/)
+    .default('bull'),
   STORAGE_DIR: z.string().min(1).default('./storage'),
   /** Max upload size in MB. */
-  UPLOAD_MAX_MB: z.coerce.number().int().positive().default(4096),
+  UPLOAD_MAX_MB: z.coerce.number().int().positive().default(1024),
+  MEDIA_MAX_ASSETS: z.coerce.number().int().positive().default(10),
+  FFMPEG_PATH: z.string().default('ffmpeg'),
+  FFPROBE_PATH: z.string().default('ffprobe'),
+  MEDIA_WORKER_ENABLED: z.stringbool().default(true),
+  MEDIA_THREADS: z.coerce.number().int().min(1).max(32).default(4),
+  MEDIA_CACHE_MB: z.coerce.number().positive().default(2048),
   LLM_BASE_URL: z.url().default('http://localhost:11434/v1'),
   LLM_API_KEY: z.string().default('ollama'),
   LLM_MODEL: z.string().min(1).default('qwen3:8b'),
+  LLM_OLLAMA_CPU: z.stringbool().default(false),
+  LLM_TIMEOUT_MS: z.coerce.number().int().min(1000).default(180000),
   /** Disable to run the API without consuming render jobs (e.g. a separate worker process later). */
   JOBS_WORKER_ENABLED: z.stringbool().default(true),
+  AUTH_CODE_TTL_SECONDS: z.coerce.number().int().min(60).default(300),
+  AUTH_CODE_RESEND_SECONDS: z.coerce.number().int().min(1).default(60),
+  AUTH_SESSION_TTL_SECONDS: z.coerce.number().int().min(60).default(604800),
 });
 export type Env = z.infer<typeof EnvSchema>;
 

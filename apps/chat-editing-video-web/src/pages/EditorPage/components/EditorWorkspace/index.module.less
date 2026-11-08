@@ -1,0 +1,33 @@
+.workspaceGrid {
+  display: grid;
+  flex: 1;
+  min-height: 0;
+  grid-template-columns: minmax(0, 1fr) minmax(270px, 28%);
+  align-items: stretch;
+  gap: 20px;
+}
+.workspaceLeft {
+  min-width: 0;
+  overflow: auto;
+  padding-right: 1px;
+}
+.workspaceLeft > section {
+  padding: 16px;
+  margin-bottom: 14px;
+}
+.previewPanel > h2 {
+  font-size: 14px;
+  margin-bottom: 12px;
+}
+.previewPanel {
+  position: relative;
+}
+.editorNote {
+  font-size: 11px;
+  margin: 0 4px;
+}
+@media (max-width: 1100px) {
+  .workspaceGrid {
+    gap: 14px;
+  }
+}

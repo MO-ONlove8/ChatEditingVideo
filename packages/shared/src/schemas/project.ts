@@ -6,6 +6,23 @@ export const ProjectSchema = z.object({
   description: z.string().max(2000).nullable(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
+  hasMainVideo: z.boolean().default(false),
+  deletionPending: z.boolean().default(false),
+  mediaCount: z.number().int().nonnegative().default(0),
+  processingCount: z.number().int().nonnegative().default(0),
+  failedCount: z.number().int().nonnegative().default(0),
+  durationFrames: z.number().int().nonnegative().default(0),
+  timelineRevision: z.number().int().nonnegative().default(0),
+  latestJob: z
+    .object({
+      id: z.uuid(),
+      revision: z.number().int().nullable(),
+      status: z.enum(['queued', 'running', 'succeeded', 'failed']),
+      progress: z.number(),
+      error: z.string().nullable(),
+    })
+    .nullable()
+    .default(null),
 });
 export type Project = z.infer<typeof ProjectSchema>;
 

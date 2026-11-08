@@ -1,0 +1,85 @@
+.scrubber {
+  margin-top: 14px;
+}
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+  color: #7a828f;
+}
+.viewport {
+  position: relative;
+  padding-top: 8px;
+  cursor: grab;
+  touch-action: pan-y;
+  user-select: none;
+}
+.dragging {
+  cursor: grabbing;
+}
+.viewport button {
+  cursor: inherit;
+}
+.strip {
+  display: flex;
+  overflow-x: auto;
+  max-width: 100%;
+  padding: 4px 0 10px;
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+.spacer {
+  flex: 0 0 50%;
+}
+.track {
+  display: flex;
+  flex: 0 0 auto;
+}
+.playhead {
+  position: absolute;
+  z-index: 1;
+  top: 8px;
+  left: 50%;
+  bottom: 10px;
+  width: 20px;
+  transform: translateX(-50%);
+  outline-offset: -3px;
+
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 5px;
+    border-top: 7px solid #393e45;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+  }
+
+  &::after {
+    content: '';
+    position: absolute;
+    left: 9px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: #393e45;
+    box-shadow: 0 0 0 1px rgb(255 255 255 / 65%);
+  }
+
+  &:focus-visible {
+    outline: none;
+
+    &::after {
+      box-shadow: 0 0 0 2px #fff;
+    }
+  }
+}
+.popup {
+  position: fixed;
+  z-index: 20;
+}

@@ -9,7 +9,8 @@ export function configureApp(app: INestApplication, env: Env): INestApplication 
   app.setGlobalPrefix(API_PREFIX.replace(/^\//, ''));
   app.enableCors({
     origin: env.CORS_ORIGINS,
-    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    exposedHeaders: ['Content-Range', 'Accept-Ranges', 'Content-Length'],
     credentials: false,
   });
   app.enableShutdownHooks();

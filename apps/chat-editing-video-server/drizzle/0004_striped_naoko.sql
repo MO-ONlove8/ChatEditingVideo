@@ -1,0 +1,1 @@
+ALTER TABLE "media_runs" ADD COLUMN "queue_prefix" text DEFAULT 'bull' NOT NULL;

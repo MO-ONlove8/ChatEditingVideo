@@ -4,12 +4,15 @@ import { Logger } from 'nestjs-pino';
 import { ChatRequestSchema, encodeSse, type ChatRequest, type ChatStreamEvent } from '@cev/shared';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { LlmService } from './llm.service.js';
+import { CurrentSession } from '../auth/auth.guard.js';
+import { AuthService, type AuthSession } from '../auth/auth.service.js';
 
 @Controller('chat')
 export class ChatController {
   constructor(
     private readonly llm: LlmService,
     private readonly logger: Logger,
+    private readonly auth: AuthService,
   ) {}
 
   /**
@@ -21,6 +24,7 @@ export class ChatController {
     @Body(new ZodValidationPipe(ChatRequestSchema)) body: ChatRequest,
     @Req() req: Request,
     @Res() res: Response,
+    @CurrentSession() session: AuthSession,
   ) {
     res.status(200).set({
       'Content-Type': 'text/event-stream; charset=utf-8',
@@ -31,7 +35,11 @@ export class ChatController {
     res.flushHeaders();
 
     const abort = new AbortController();
-    req.on('close', () => abort.abort());
+    const offSession = this.auth.watch(session, () => {
+      abort.abort();
+      res.end();
+    });
+    res.on('close', () => abort.abort());
     const send = (e: ChatStreamEvent) => res.write(encodeSse(e));
 
     try {
@@ -46,6 +54,7 @@ export class ChatController {
       }
     } finally {
       res.end();
+      offSession();
     }
   }
 }

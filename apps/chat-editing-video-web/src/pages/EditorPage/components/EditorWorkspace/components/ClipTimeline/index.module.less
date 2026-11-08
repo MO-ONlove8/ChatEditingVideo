@@ -1,0 +1,117 @@
+.timelinePanel > div > h2 {
+  font-size: 14px;
+  margin-bottom: 0;
+}
+.timelinePanel > div > span {
+  font-size: 11px;
+}
+.help {
+  border: 1px solid #aab0b8;
+  border-radius: 50%;
+  display: inline-grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  margin-left: 18px;
+  cursor: help;
+}
+.timelineEmpty {
+  padding: 22px 16px;
+  text-align: center;
+  color: #939aa4;
+  background: #eceef0;
+  margin-top: 12px;
+  font-size: 12px;
+}
+.clipScroll {
+  overflow-x: auto;
+  position: relative;
+  margin-top: 12px;
+}
+.clipTrack {
+  height: 94px;
+  position: relative;
+  min-width: 100%;
+  touch-action: pan-y;
+  user-select: none;
+  cursor: pointer;
+}
+.clipTicks {
+  height: 30px;
+  position: relative;
+  color: #777;
+  font-size: 11px;
+}
+.clipTicks span {
+  position: absolute;
+  white-space: nowrap;
+}
+.clipBlocks {
+  display: flex;
+  height: 48px;
+}
+.clipBlock {
+  position: relative;
+  background: #d3d6da;
+  border-right: 2px solid white;
+  flex: none;
+}
+.clipBlock:nth-child(even) {
+  background: #bcc1c7;
+}
+.clipSelect {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  padding: 8px;
+  overflow: hidden;
+  white-space: nowrap;
+  color: #222;
+  cursor: pointer;
+}
+.clipDelete {
+  position: absolute;
+  z-index: 2;
+  right: 2px;
+  top: 8px;
+  padding: 2px 5px;
+  background: #ddd;
+  min-width: 20px;
+}
+.clipBlock:not(:hover):not(:focus-within) .clipDelete {
+  opacity: 0;
+}
+.playhead {
+  position: absolute;
+  z-index: 1;
+  top: 22px;
+  bottom: 8px;
+  width: 20px;
+  transform: translateX(-50%);
+  cursor: ew-resize;
+  touch-action: none;
+  outline-offset: -3px;
+
+  &::before {
+    content: '';
+    position: absolute;
+    left: 5px;
+    top: 0;
+    border-top: 7px solid #333;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+  }
+
+  &::after {
+    content: '';
+    position: absolute;
+    left: 9px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: #333;
+    box-shadow: 0 0 0 1px rgb(255 255 255 / 65%);
+  }
+}
