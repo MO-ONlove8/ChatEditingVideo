@@ -1,18 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import {
-  ChatPageSchema,
-  EditorStateSchema,
-  formatTimecode,
-  type ChatTurn,
-  type EditorState,
-  type Timeline,
-} from '@cev/shared';
+import { ChatPageSchema, type ChatTurn, type EditorState } from '@cev/shared';
 import { api } from '../../../../../../lib/api';
 import { editorPath, sendInstruction } from '../../../../../../lib/editing';
 import { Button } from '../../../../../../components/Button';
-import { Dialog } from '../../../../../../components/Dialog';
+import { CandidateCard } from './CandidateCard';
 import { Notice } from '../../../../../../components/Notice';
-import { TimelinePlayer } from '../../../../../../components/TimelinePlayer';
 import common from '../../../../../../styles/common.module.less';
 import styles from './index.module.less';
 
@@ -21,8 +13,18 @@ export function ChatPanel({
   state,
   onState,
   onBeforeChange,
+  candidateLoaded,
+  onCandidatePreview,
+  dirtyRequest,
+  playhead = 0,
+  selectedId,
 }: {
+  candidateLoaded?: string;
+  onCandidatePreview?: () => void;
+  dirtyRequest?: string;
   projectId?: string;
+  playhead?: number;
+  selectedId?: string;
   state?: EditorState;
   onState: (state: EditorState) => void;
   onBeforeChange: () => void;
@@ -30,11 +32,9 @@ export function ChatPanel({
   const [text, setText] = useState(''),
     [sending, setSending] = useState(false),
     [sendingText, setSendingText] = useState(''),
-    [busy, setBusy] = useState<string | null>(null),
     [errors, setErrors] = useState<Record<string, string>>({}),
     [older, setOlder] = useState<ChatTurn[]>([]),
-    [cursor, setCursor] = useState<string | null | undefined>(undefined),
-    [preview, setPreview] = useState<Timeline | null>(null);
+    [cursor, setCursor] = useState<string | null | undefined>(undefined);
   const active = useRef(false),
     controller = useRef<AbortController | null>(null),
     list = useRef<HTMLDivElement>(null),
@@ -68,36 +68,16 @@ export function ChatPanel({
     const abort = new AbortController();
     controller.current = abort;
     try {
-      await sendInstruction(projectId, value, state.timeline.revision, id, onState, abort.signal);
+      await sendInstruction(projectId, value, state.timeline.revision, id, onState, abort.signal, {
+        playhead,
+        selectedId,
+      });
       retry.current = null;
     } catch (error) {
       if (!abort.signal.aborted) setErrors((e) => ({ ...e, send: (error as Error).message }));
     } finally {
       active.current = false;
       setSending(false);
-    }
-  };
-  const decide = async (id: string, action: 'confirm' | 'cancel') => {
-    if (!projectId || busy) return;
-    setBusy(id);
-    setErrors((e) => ({ ...e, [id]: '' }));
-    onBeforeChange();
-    try {
-      onState(
-        await api(EditorStateSchema, `${editorPath(projectId)}/proposals/${id}/${action}`, {
-          method: 'POST',
-        }),
-      );
-    } catch (error) {
-      setErrors((e) => ({
-        ...e,
-        [id]:
-          action === 'confirm'
-            ? `保存失败，请重试：${(error as Error).message}`
-            : (error as Error).message,
-      }));
-    } finally {
-      setBusy(null);
     }
   };
   return (
@@ -147,77 +127,17 @@ export function ChatPanel({
                   重试理解
                 </Button>
               )}
-              {card && (
-                <div className={styles.proposalCard} aria-label="剪辑确认卡">
-                  <strong>请确认这次剪辑</strong>
-                  <span className={common.badge}>
-                    {
-                      {
-                        pending: '待确认',
-                        confirmed: '已保存',
-                        cancelled: '已取消',
-                        invalid: '已失效',
-                      }[card.status]
-                    }
-                  </span>
-                  <dl>
-                    <dt>来源</dt>
-                    <dd>{card.sourceLabel}</dd>
-                    <dt>截取范围</dt>
-                    <dd>
-                      {formatTimecode(card.previewClip.startFrame)} →{' '}
-                      {formatTimecode(card.previewClip.endFrame)}
-                    </dd>
-                    <dt>片段时长</dt>
-                    <dd>
-                      {formatTimecode(card.previewClip.endFrame - card.previewClip.startFrame + 1)}
-                      （{card.previewClip.endFrame - card.previewClip.startFrame + 1} 帧）
-                    </dd>
-                    <dt>目标位置</dt>
-                    <dd>{card.destinationLabel}</dd>
-                  </dl>
-                  {card.status === 'pending' && (
-                    <>
-                      <Button
-                        onClick={() => {
-                          onBeforeChange();
-                          setPreview({
-                            revision: card.baseRevision,
-                            fps: 30,
-                            canvas:
-                              state?.timeline.canvas ??
-                              (card.operation.kind === 'add'
-                                ? card.operation.canvas
-                                : { width: 1920, height: 1080 }),
-                            clips: [{ ...card.previewClip, id: card.id }],
-                          });
-                        }}
-                      >
-                        播放选段预览
-                      </Button>
-                      <div className={`${common.row} ${styles.proposalActions}`}>
-                        <Button
-                          variant="primary"
-                          disabled={busy !== null}
-                          onClick={() => void decide(card.id, 'confirm')}
-                        >
-                          {busy === card.id
-                            ? '处理中…'
-                            : errors[card.id]
-                              ? '重试确认保存'
-                              : '确认并保存'}
-                        </Button>
-                        <Button
-                          disabled={busy !== null}
-                          onClick={() => void decide(card.id, 'cancel')}
-                        >
-                          取消
-                        </Button>
-                      </div>
-                    </>
-                  )}
-                  {errors[card.id] && <Notice kind="error">{errors[card.id]}</Notice>}
-                </div>
+              {card && projectId && (
+                <CandidateCard
+                  card={card}
+                  candidateLoaded={candidateLoaded}
+                  onCandidatePreview={onCandidatePreview}
+                  dirty={dirtyRequest === turn.requestId}
+                  requestId={turn.requestId}
+                  projectId={projectId}
+                  onState={onState}
+                  onBeforeChange={onBeforeChange}
+                />
               )}
             </article>
           );
@@ -264,9 +184,6 @@ export function ChatPanel({
           </Button>
         </div>
       </form>
-      <Dialog open={Boolean(preview)} title="选段播放预览" onClose={() => setPreview(null)}>
-        {preview && <TimelinePlayer timeline={preview} />}
-      </Dialog>
     </section>
   );
 }

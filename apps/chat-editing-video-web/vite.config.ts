@@ -7,6 +7,7 @@ export default defineConfig({
   plugins: [react()],
   // Absolute base works for both web deploy (/) and Electron's app://local/ protocol.
   base: '/',
+  publicDir: '../../packages/shared/assets',
   server: {
     port: 5173,
     strictPort: true,

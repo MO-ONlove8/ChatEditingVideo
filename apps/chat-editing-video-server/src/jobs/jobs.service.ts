@@ -18,11 +18,20 @@ import {
   EditingErrorCodes,
   type CreateEditJobInput,
   type EditJob,
-  type DirectRenderPlan,
+  type CompositeRenderPlan,
+  exportSrt,
+  timelineFrames,
+  EditJobSchema,
 } from '@cev/shared';
 import { DB, type Database } from '../database/database.module.js';
 import { editJobs, mediaAssets, projects, type EditJobRow } from '../database/schema.js';
 import { EditingService } from '../editing/editing.service.js';
+import {
+  CompositionEngine,
+  RENDER_CONFIG,
+  contentHash,
+} from '../composition/composition-engine.service.js';
+import { toMediaAsset } from '../media/media.service.js';
 import { projectLock } from '../media/media-processing.service.js';
 import { editingSource } from '../media/media-source.js';
 import { StorageService } from '../storage/storage.service.js';
@@ -33,7 +42,11 @@ import { APP_CONFIG } from '../config/config.module.js';
 import type { Env } from '../config/env.js';
 
 export function toEditJob(row: EditJobRow): EditJob {
-  return { ...row, createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString() };
+  return EditJobSchema.parse({
+    ...row,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  });
 }
 
 @Injectable()
@@ -45,6 +58,7 @@ export class JobsService implements OnApplicationBootstrap, OnModuleDestroy {
     @Inject(DB) private readonly db: Database,
     @InjectQueue(EDIT_QUEUE) private readonly queue: Queue<EditJobData>,
     private readonly editing: EditingService,
+    private readonly composition: CompositionEngine,
     private readonly storage: StorageService,
     @Inject(REDIS) private readonly redis: Redis,
     private readonly auth: AuthService,
@@ -70,11 +84,29 @@ export class JobsService implements OnApplicationBootstrap, OnModuleDestroy {
           message: '剪辑版本已变化，请刷新后重新下载',
         });
       if (!timeline.clips.length || !timeline.canvas) throw new ConflictException('暂无主视频');
+      const outputType = input.outputType ?? 'mp4';
+      if (outputType === 'srt') {
+        try {
+          exportSrt(timeline.packaging?.subtitles ?? [], timelineFrames(timeline));
+        } catch {
+          throw new ConflictException('没有有效字幕，无法导出 SRT');
+        }
+      }
+      const configHash = contentHash({
+        config: RENDER_CONFIG,
+        font: this.composition.fontHash,
+        type: outputType,
+      });
       const [old] = await tx
         .select()
         .from(editJobs)
         .where(
-          and(eq(editJobs.projectId, input.projectId), eq(editJobs.revision, timeline.revision)),
+          and(
+            eq(editJobs.projectId, input.projectId),
+            eq(editJobs.revision, timeline.revision),
+            eq(editJobs.outputType, outputType),
+            eq(editJobs.configHash, configHash),
+          ),
         )
         .orderBy(desc(editJobs.createdAt))
         .limit(1);
@@ -102,8 +134,23 @@ export class JobsService implements OnApplicationBootstrap, OnModuleDestroy {
           hasAudio: source.info.hasAudio,
         };
       });
-      const plan: DirectRenderPlan = {
-        version: 3,
+      const [project] = await tx.select().from(projects).where(eq(projects.id, input.projectId));
+      const referenced = new Set([
+        ...timeline.clips.map((c) => c.source),
+        ...(timeline.packaging?.overlays.flatMap((o) => (o.kind === 'image' ? [o.assetId] : [])) ??
+          []),
+        ...(timeline.packaging?.audio.map((a) => a.assetId) ?? []),
+      ]);
+      const plan: CompositeRenderPlan = {
+        version: 4,
+        projectId: input.projectId,
+        ownerId,
+        projectName: project!.name,
+        outputType,
+        configHash,
+        fontHash: this.composition.fontHash,
+        timeline,
+        assets: assets.filter((a) => referenced.has(a.id)).map(toMediaAsset),
         revision: timeline.revision,
         clips,
         output: { container: 'mp4', ...timeline.canvas },
@@ -113,6 +160,8 @@ export class JobsService implements OnApplicationBootstrap, OnModuleDestroy {
         .values({
           projectId: input.projectId,
           revision: timeline.revision,
+          outputType,
+          configHash,
           plan,
           queuePrefix: this.env.QUEUE_PREFIX,
         })
@@ -142,6 +191,13 @@ export class JobsService implements OnApplicationBootstrap, OnModuleDestroy {
       for (const clip of current!.plan.clips)
         if (!(await this.storage.exists(clip.sourceKey)))
           throw new ConflictException('生成所需的处理文件缺失，请重新处理素材');
+      if (current!.plan.version === 4)
+        for (const a of current!.plan.assets)
+          if (
+            !(await this.storage.exists(a.storageKey)) ||
+            (a.auxiliary?.workingKey && !(await this.storage.exists(a.auxiliary.workingKey)))
+          )
+            throw new ConflictException('快照依赖的素材文件缺失，请恢复文件后重试');
       const [row] = await tx
         .update(editJobs)
         .set({

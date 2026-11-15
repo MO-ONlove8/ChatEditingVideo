@@ -39,6 +39,11 @@ export default defineConfig({
             testMatch: /editing-live\.spec\.ts/,
             use: { ...devices['Desktop Chrome'], baseURL: 'http://localhost:4173' },
           },
+          {
+            name: 'packaging-live',
+            testMatch: /packaging-live\.spec\.ts/,
+            use: { ...devices['Desktop Chrome'], baseURL: 'http://localhost:4173' },
+          },
         ]
       : []),
   ],

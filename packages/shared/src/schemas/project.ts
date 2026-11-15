@@ -6,6 +6,17 @@ export const ProjectSchema = z.object({
   description: z.string().max(2000).nullable(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
+  hasSubtitles: z.boolean().optional(),
+  latestSrtJob: z
+    .object({
+      id: z.uuid(),
+      revision: z.number().int().nullable(),
+      status: z.enum(['queued', 'running', 'succeeded', 'failed']),
+      progress: z.number(),
+      error: z.string().nullable(),
+    })
+    .nullable()
+    .optional(),
   hasMainVideo: z.boolean().default(false),
   deletionPending: z.boolean().default(false),
   mediaCount: z.number().int().nonnegative().default(0),

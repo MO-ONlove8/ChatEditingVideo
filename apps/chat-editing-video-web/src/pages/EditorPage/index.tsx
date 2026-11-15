@@ -27,6 +27,7 @@ export function EditorPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const savedProjectId = useTransfers((s) => s.projectId);
+  const uploadContext = useTransfers((s) => s.contextId);
   const task = useTask(id);
   const qc = useQueryClient();
   const [rename, setRename] = useState(false);
@@ -76,10 +77,13 @@ export function EditorPage() {
             重命名
           </Button>
         )}
-        <span className={common.badge}>{id ? '所有更改已保存' : '上传完成后创建任务'}</span>
+        <span className={common.badge}>{id ? '确认后的内容已保存' : '上传完成后创建任务'}</span>
         <div className={common.pushRight}>{task.data && <ExportControl project={task.data} />}</div>
       </div>
-      <EditorWorkspace projectId={id} />
+      <EditorWorkspace
+        key={userId + ':' + (!id || savedProjectId === id ? uploadContext : id)}
+        projectId={id}
+      />
       <ConfirmDialog
         open={rename}
         title="重命名任务"

@@ -29,6 +29,8 @@ export function AssetRow({
   transfer?: Transfer;
 }) {
   const asset: MediaAsset = savedAsset ?? {
+    kind: 'video',
+    auxiliary: null,
     id: transfer!.id,
     projectId: '',
     fileName: transfer!.file.name,

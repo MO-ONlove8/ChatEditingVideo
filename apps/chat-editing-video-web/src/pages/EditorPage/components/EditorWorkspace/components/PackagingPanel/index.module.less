@@ -1,0 +1,71 @@
+.panel {
+  height: 100%;
+  overflow: auto;
+  padding: 14px;
+}
+.tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0;
+}
+.objects {
+  height: 180px;
+  overflow: auto;
+  border: 1px solid #ccc;
+}
+.objects button {
+  border: 0;
+  border-bottom: 1px solid #ddd;
+  background: #fafafa;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 6px;
+  cursor: pointer;
+}
+.objects button[aria-pressed='true'] {
+  background: #d6d6d6;
+}
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 16px;
+}
+.form fieldset {
+  border: 1px solid #ddd;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  min-width: 0;
+}
+.form label {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+}
+.form input:not([type='checkbox']),
+.form select {
+  max-width: 65%;
+  min-width: 0;
+}
+.form textarea {
+  width: 100%;
+  height: 72px;
+}
+.form label:has(textarea) {
+  display: block;
+}
+.nine {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 3px;
+}
+.form small {
+  color: #777;
+}

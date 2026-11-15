@@ -1,10 +1,16 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EditorStateSchema, type EditorState } from '@cev/shared';
 import { ChatPanel } from '.';
 
+vi.mock('../../../../../../components/TimelinePlayer', () => ({
+  TimelinePlayer: ({ onReady }: { onReady?: () => void }) => {
+    useEffect(() => onReady?.(), [onReady]);
+    return <div>合成预览</div>;
+  },
+}));
 const id = '00000000-0000-4000-8000-000000000001',
   turn = '00000000-0000-4000-8000-000000000002',
   card = '00000000-0000-4000-8000-000000000003',
@@ -42,6 +48,23 @@ const initial = (): EditorState =>
           destinationLabel: '主视频末尾',
           previewClip: { source, generation: 1, startFrame: 150, endFrame: 240 },
           appliedRevision: null,
+          previewStatus: 'ready',
+          contentHash: 'hash',
+          generation: 1,
+          candidate: {
+            revision: 1,
+            fps: 30,
+            canvas: { width: 1920, height: 1080 },
+            clips: [{ id: card, source, generation: 1, startFrame: 150, endFrame: 240 }],
+          },
+          manifest: {
+            hash: 'hash',
+            frames: 91,
+            canvas: { width: 1920, height: 1080 },
+            overlays: [],
+            audioKey: 'mix',
+            fontHash: 'font',
+          },
         },
       },
     ],
@@ -59,6 +82,7 @@ describe('persisted confirmation card', () => {
       'fetch',
       vi.fn(async () => {
         calls++;
+        if (calls === 2) return Response.json({ status: 'not-committed', revision: null });
         if (calls === 1) return Response.json({ message: '连接中断' }, { status: 503 });
         const saved = initial();
         saved.turns[0]!.proposal!.status = 'confirmed';
@@ -70,11 +94,11 @@ describe('persisted confirmation card', () => {
     expect(screen.getByLabelText('输入剪辑指令')).toBeDisabled();
     expect(screen.getByLabelText('剪辑确认卡')).toHaveTextContent('91 帧');
     await userEvent.click(screen.getByRole('button', { name: '确认并保存' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('保存失败，请重试');
+    expect(await screen.findByRole('alert')).toHaveTextContent('保存未确认');
     expect(screen.getByLabelText('剪辑确认卡')).toHaveTextContent('待确认');
-    await userEvent.dblClick(screen.getByRole('button', { name: '重试确认保存' }));
+    await userEvent.dblClick(screen.getByRole('button', { name: '核对并重试保存' }));
     await waitFor(() => expect(screen.getByLabelText('剪辑确认卡')).toHaveTextContent('已保存'));
-    expect(calls).toBe(2);
+    expect(calls).toBe(3);
     expect(screen.getByLabelText('输入剪辑指令')).toBeEnabled();
   });
   it('cancel changes card state without changing the timeline', async () => {

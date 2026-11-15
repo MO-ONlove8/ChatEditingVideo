@@ -141,6 +141,17 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-node
+      - name: Install Windows media tools
+        shell: pwsh
+        run: |
+          choco install ffmpeg --yes --no-progress --limit-output
+          if ($LASTEXITCODE -ne 0) { throw 'FFmpeg installation failed' }
+          foreach ($tool in @('ffmpeg', 'ffprobe')) {
+            $executable = (Get-Command "$tool.exe" -ErrorAction Stop).Source
+            & $executable -version
+            if ($LASTEXITCODE -ne 0) { throw "$tool cannot run" }
+            "$($tool.ToUpperInvariant())_PATH=$executable" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          }
       - name: Build Web, Electron and shared contracts
         run: pnpm exec turbo run build --filter=@cev/web --filter=@cev/desktop --force
       - name: Run Windows Electron tests

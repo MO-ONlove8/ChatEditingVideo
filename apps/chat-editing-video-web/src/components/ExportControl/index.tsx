@@ -8,13 +8,17 @@ import { Button } from '../Button';
 import { Notice } from '../Notice';
 import styles from './index.module.less';
 
-export function ExportControl({
+function ExportKind({
   project,
   compact = false,
+  outputType,
 }: {
   project: Project;
+  outputType: 'mp4' | 'srt';
   compact?: boolean;
 }) {
+  const latest = outputType === 'srt' ? project.latestSrtJob : project.latestJob;
+  const allowed = project.hasMainVideo && (outputType === 'mp4' || Boolean(project.hasSubtitles));
   const [jobId, setJobId] = useState<string | null>(null),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
@@ -24,10 +28,9 @@ export function ExportControl({
     user = useAuth((s) => s.session?.user.id);
   const [saving, setSaving] = useState<string | null>(null);
   const job = useQuery({
-    queryKey: ['render', user, jobId ?? project.latestJob?.id],
-    enabled: Boolean(user && (jobId ?? project.latestJob?.id)),
-    queryFn: ({ signal }) =>
-      api(EditJobSchema, ApiRoutes.job(jobId ?? project.latestJob!.id), { signal }),
+    queryKey: ['render', user, jobId ?? latest?.id],
+    enabled: Boolean(user && (jobId ?? latest?.id)),
+    queryFn: ({ signal }) => api(EditJobSchema, ApiRoutes.job(jobId ?? latest!.id), { signal }),
     refetchInterval: (q) =>
       q.state.data && ['queued', 'running'].includes(q.state.data.status) ? 1000 : false,
   });
@@ -36,7 +39,7 @@ export function ExportControl({
     void qc.invalidateQueries({ queryKey: ['editor'] });
   };
   const download = async () => {
-    if (lock.current || !project.hasMainVideo) return;
+    if (lock.current || !allowed) return;
     lock.current = true;
     setBusy(true);
     setError('');
@@ -46,6 +49,7 @@ export function ExportControl({
         method: 'POST',
         body: JSON.stringify({
           projectId: project.id,
+          outputType,
           expectedRevision: project.timelineRevision,
           requestId: crypto.randomUUID(),
         }),
@@ -81,7 +85,8 @@ export function ExportControl({
       await apiFetch(`/jobs/${id}/download-ticket`, { method: 'POST' });
       const link = document.createElement('a');
       link.href = `${apiBaseUrl()}/jobs/${id}/download`;
-      link.download = `video-v${job.data?.revision ?? project.timelineRevision}.mp4`;
+      link.download =
+        project.name + '-v' + (job.data?.revision ?? project.timelineRevision) + '.' + outputType;
       document.body.append(link);
       link.click();
       link.remove();
@@ -91,10 +96,10 @@ export function ExportControl({
   return (
     <div className={`${styles.exportControl} ${compact ? styles.compact : ''}`}>
       <Button
-        disabled={busy || !project.hasMainVideo || project.deletionPending}
+        disabled={busy || !allowed || project.deletionPending}
         onClick={() => void download()}
       >
-        {busy ? '处理中…' : compact ? '下载' : '下载成品'}
+        {busy ? '处理中…' : outputType === 'srt' ? '导出 SRT' : compact ? '下载' : '下载成品'}
       </Button>
       {saving && (
         <Button onClick={() => void getDesktop()?.cancelRenderDownload(saving)}>取消保存</Button>
@@ -136,7 +141,7 @@ export function ExportControl({
               </Button>
             </>
           )}
-          {job.data.status === 'succeeded' && project.hasMainVideo && (
+          {job.data.status === 'succeeded' && allowed && (
             <Button
               disabled={busy}
               onClick={() => {
@@ -151,7 +156,7 @@ export function ExportControl({
                   });
               }}
             >
-              保存v{job.data.revision}到本地
+              保存{outputType.toUpperCase()} v{job.data.revision}到本地
             </Button>
           )}
           {job.data.revision !== project.timelineRevision && (
@@ -161,6 +166,22 @@ export function ExportControl({
       )}
       {error && <Notice kind="error">{error}</Notice>}
       {notice && <small role="status">{notice}</small>}
+    </div>
+  );
+}
+
+export function ExportControl({
+  project,
+  compact = false,
+}: {
+  project: Project;
+  compact?: boolean;
+}) {
+  return (
+    <div className={styles.exportGroup}>
+      <ExportKind project={project} compact={compact} outputType="mp4" />
+      <ExportKind project={project} compact={compact} outputType="srt" />
+      {!project.hasSubtitles && <small className={styles.unavailable}>无有效字幕</small>}
     </div>
   );
 }

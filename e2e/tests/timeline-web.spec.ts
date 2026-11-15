@@ -1,16 +1,38 @@
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { expect, test, type Page } from '@playwright/test';
-import { videoFixture } from '../../apps/chat-editing-video-server/test/support/video.js';
+import { videoFixture, execute } from '../../apps/chat-editing-video-server/test/support/video.js';
+import { emptyPackaging, defaultTextStyle } from '../../packages/shared/src/elements.js';
 
 const token = 'a'.repeat(43);
 const projectId = '00000000-0000-4000-8000-000000000201';
 const source = '00000000-0000-4000-8000-000000000202';
 let video: Buffer;
+let audio: Buffer;
 test.beforeAll(async () => {
   video = await readFile(
     await videoFixture(path.resolve('test-results', 'timeline.mp4'), [], 30, 10),
   );
+  const file = path.resolve('test-results', 'timeline-audio.m4a');
+  await execute(
+    process.env.FFMPEG_PATH ?? 'ffmpeg',
+    [
+      '-v',
+      'error',
+      '-y',
+      '-f',
+      'lavfi',
+      '-i',
+      'anullsrc=r=48000:cl=stereo',
+      '-t',
+      '100',
+      '-c:a',
+      'aac',
+      file,
+    ],
+    { windowsHide: true },
+  );
+  audio = await readFile(file);
 });
 
 async function openTimeline(page: Page, long = false) {
@@ -23,6 +45,24 @@ async function openTimeline(page: Page, long = false) {
     createdAt: new Date(0).toISOString(),
     updatedAt: new Date(0).toISOString(),
   };
+  const packaging = emptyPackaging();
+  if (long) {
+    packaging.subtitles = Array.from({ length: 1000 }, (_, i) => ({
+      id: `00000000-0000-4000-8000-${String(i + 1000).padStart(12, '0')}`,
+      number: i + 1,
+      text: '字幕' + i,
+      startFrame: i * 3,
+      endFrame: i * 3,
+    }));
+    packaging.overlays = Array.from({ length: 20 }, (_, i) => ({
+      id: `00000000-0000-4000-8000-${String(i + 3000).padStart(12, '0')}`,
+      number: i + 1,
+      kind: 'text',
+      text: '标题' + i,
+      style: defaultTextStyle(),
+      range: { mode: 'whole' },
+    }));
+  }
   await page.addInitScript((value) => sessionStorage.setItem('cev-session', value), token);
   await page.route('**/api/**', async (route) => {
     const req = route.request();
@@ -55,27 +95,62 @@ async function openTimeline(page: Page, long = false) {
               startFrame: long ? 0 : i * 150,
               endFrame: long ? 299 : i * 150 + 149,
             })),
+            packaging,
           },
           turns: [],
           nextCursor: null,
+          composition: {
+            status: 'ready',
+            revision: 1,
+            error: null,
+            manifest: {
+              hash: 'timeline-fixture',
+              frames: long ? 3000 : 300,
+              canvas: { width: 320, height: 180 },
+              overlays: packaging.subtitles.map((s) => ({
+                key: 'S' + s.number + '.png',
+                label: 'S' + s.number,
+                startFrame: s.startFrame,
+                endFrame: s.endFrame,
+                x: 0,
+                y: 0,
+                width: 1,
+                height: 1,
+              })),
+              audioKey: 'test-audio',
+              fontHash: 'test',
+            },
+          },
         },
       });
     if (endpoint.endsWith('/media')) return route.fulfill({ json: [] });
+    if (endpoint.endsWith('/composition-resource') && req.url().includes('.png'))
+      return route.fulfill({
+        contentType: 'image/png',
+        body: Buffer.from(
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jZ1sAAAAASUVORK5CYII=',
+          'base64',
+        ),
+      });
     if (endpoint === '/media/policy')
       return route.fulfill({ json: { maxBatch: 3, maxAssets: 10, maxBytes: 1024 ** 3, fps: 30 } });
-    if (endpoint === `/media/${source}/content`) {
+    if (
+      endpoint === `/media/${source}/content` ||
+      endpoint === `/projects/${projectId}/composition-resource`
+    ) {
       expect(req.headers()['authorization']).toBe(`Bearer ${token}`);
+      const bytes = endpoint.endsWith('/composition-resource') ? audio : video;
       const range = /^bytes=(\d+)-(\d*)$/.exec(req.headers()['range'] ?? '');
       const start = range ? Number(range[1]) : 0;
-      const end = range?.[2] ? Math.min(Number(range[2]), video.length - 1) : video.length - 1;
+      const end = range?.[2] ? Math.min(Number(range[2]), bytes.length - 1) : bytes.length - 1;
       return route.fulfill({
         status: range ? 206 : 200,
-        contentType: 'video/mp4',
+        contentType: endpoint.endsWith('/composition-resource') ? 'audio/mp4' : 'video/mp4',
         headers: {
           'accept-ranges': 'bytes',
-          ...(range ? { 'content-range': `bytes ${start}-${end}/${video.length}` } : {}),
+          ...(range ? { 'content-range': `bytes ${start}-${end}/${bytes.length}` } : {}),
         },
-        body: video.subarray(start, end + 1),
+        body: bytes.subarray(start, end + 1),
       });
     }
     return route.fulfill({ status: 404, json: { message: 'Not found' } });
@@ -186,4 +261,23 @@ test('seeks on a horizontally scrolled timeline and follows a playhead dragged t
   await expect(page.getByRole('button', { name: '暂停', exact: true })).toBeVisible();
   await page.getByRole('button', { name: '暂停', exact: true }).click();
   expect(errors).toEqual([]);
+});
+
+test('bounds DOM and image loading for one thousand subtitles and twenty overlapping text elements', async ({
+  page,
+}) => {
+  await openTimeline(page, true);
+  await page.setViewportSize({ width: 960, height: 600 });
+  await page.getByRole('tab', { name: '属性', exact: true }).click();
+  const list = page.getByLabel('元素列表');
+  expect(await list.getByRole('button').count()).toBeLessThan(20);
+  await list.evaluate((el) => {
+    el.scrollTop = 36252;
+  });
+  await expect(list.getByRole('button', { name: /S1000 字幕999/ })).toBeVisible();
+  expect(
+    await page.getByRole('region', { name: '主视频预览' }).locator('img').count(),
+  ).toBeLessThan(30);
+  expect(await page.getByRole('button', { name: /^选择S/ }).count()).toBeLessThan(800);
+  expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBe(600);
 });

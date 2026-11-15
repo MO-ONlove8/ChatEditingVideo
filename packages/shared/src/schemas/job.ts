@@ -8,6 +8,7 @@ export const EditJobSchema = z.object({
   id: z.uuid(),
   projectId: z.uuid(),
   status: JobStatusSchema,
+  outputType: z.enum(['mp4', 'srt']).default('mp4'),
   progress: z.number().min(0).max(100),
   plan: EditPlanSchema,
   outputKey: z.string().nullable(),
@@ -20,6 +21,7 @@ export const EditJobSchema = z.object({
 export type EditJob = z.infer<typeof EditJobSchema>;
 
 export const CreateEditJobSchema = z.object({
+  outputType: z.enum(['mp4', 'srt']).default('mp4'),
   projectId: z.uuid(),
   expectedRevision: z.number().int().nonnegative(),
   requestId: z.uuid(),

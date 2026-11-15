@@ -17,6 +17,7 @@ export function useEditor(id?: string) {
     enabled: Boolean(user && id),
     queryFn: ({ signal }) => api(EditorStateSchema, ApiRoutes.editorState(id!), { signal }),
     refetchInterval: (q) =>
+      q.state.data?.composition?.status === 'processing' ||
       q.state.data?.turns.some((t) => t.status === 'understanding' || t.status === 'pending')
         ? 2000
         : false,
@@ -29,10 +30,11 @@ export async function sendInstruction(
   requestId: string,
   onState: (s: EditorState) => void,
   signal?: AbortSignal,
+  context?: { playhead: number; selectedId?: string },
 ) {
   const response = await apiFetch(ApiRoutes.projectChatStream(id), {
     method: 'POST',
-    body: JSON.stringify({ text, expectedRevision: revision, requestId }),
+    body: JSON.stringify({ text, expectedRevision: revision, requestId, ...context }),
     signal,
   });
   if (!response.body) throw new Error('无法接收理解结果，请重试');

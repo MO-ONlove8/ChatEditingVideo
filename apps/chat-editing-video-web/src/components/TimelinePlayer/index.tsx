@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { Player, type PlayerRef } from '@remotion/player';
-import { formatTimecode, timelineFrames, type Timeline } from '@cev/shared';
+import {
+  formatTimecode,
+  timelineFrames,
+  type Timeline,
+  type CompositionManifest,
+} from '@cev/shared';
 import { useAuth } from '../../stores/auth';
 import { Button } from '../Button';
 import { EmptyState } from '../EmptyState';
@@ -16,6 +21,9 @@ export function TimelinePlayer({
   onPlaying,
   stopAt,
   standalone = false,
+  manifest,
+  projectId,
+  onReady,
 }: {
   timeline: Timeline;
   playerRef?: RefObject<PlayerRef | null>;
@@ -23,7 +31,11 @@ export function TimelinePlayer({
   onPlaying?: (playing: boolean) => void;
   stopAt?: RefObject<number | null>;
   standalone?: boolean;
+  manifest?: CompositionManifest;
+  projectId?: string;
+  onReady?: () => void;
 }) {
+  const lastFrame = useRef(0);
   const own = useRef<PlayerRef>(null),
     ref = playerRef ?? own;
   const token = useAuth((s) => s.token);
@@ -36,8 +48,8 @@ export function TimelinePlayer({
   const total = timelineFrames(timeline),
     canvas = timeline.canvas ?? { width: 1920, height: 1080 };
   const inputs = useMemo(
-    () => ({ clips: timeline.clips, token: token ?? '' }),
-    [timeline.clips, token],
+    () => ({ clips: timeline.clips, token: token ?? '', manifest, projectId, onReady }),
+    [timeline.clips, token, manifest, projectId, onReady],
   );
   useEffect(() => {
     const player = ref.current;
@@ -48,6 +60,7 @@ export function TimelinePlayer({
     onPlaying?.(player.isPlaying());
     if (stopAt) stopAt.current = null;
     const update = (e: { detail: { frame: number } }) => {
+      lastFrame.current = e.detail.frame;
       setFrame(e.detail.frame);
       onFrame?.(e.detail.frame);
     };
@@ -85,10 +98,11 @@ export function TimelinePlayer({
   return (
     <div className={styles.timelinePlayer}>
       <Player
-        key={`${token}-${timeline.revision}-${retry}`}
+        key={`${token}-${timeline.revision}-${manifest?.hash ?? ''}-${retry}`}
         ref={ref}
         component={Composition}
         inputProps={inputs}
+        initialFrame={Math.max(0, Math.min(lastFrame.current, total - 1))}
         durationInFrames={total}
         compositionWidth={canvas.width}
         compositionHeight={canvas.height}
@@ -169,7 +183,8 @@ export function TimelinePlayer({
         {standalone && <Button onClick={() => ref.current?.requestFullscreen()}>全屏</Button>}
       </div>
       <small className={common.muted}>
-        {canvas.width} × {canvas.height} · 30 帧/秒 · 原声 · 播放音量不改变导出音量
+        {canvas.width} × {canvas.height} · 30 帧/秒 · {manifest ? '完整混音' : '原声'} ·
+        播放音量不改变导出音量
       </small>
     </div>
   );

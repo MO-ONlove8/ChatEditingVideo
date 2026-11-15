@@ -82,13 +82,33 @@ describe('persisted editing and real rendering', () => {
     parser.push(response.text);
     return result!;
   };
-  const confirm = async (id: string, s: EditorState) =>
-    (
+  const confirm = async (id: string, initial: EditorState) => {
+    const proposalId = initial.turns.at(-1)!.proposal!.id;
+    let current = initial;
+    await expect
+      .poll(
+        async () => {
+          current = await state(id);
+          const card = current.turns.find((t) => t.proposal?.id === proposalId)!.proposal!;
+          if (card.previewStatus === 'failed') throw new Error(card.previewError ?? '候选失败');
+          return card.previewStatus;
+        },
+        { timeout: 25000, interval: 100 },
+      )
+      .toBe('ready');
+    const turn = current.turns.find((t) => t.proposal?.id === proposalId)!;
+    return (
       await request(app.getHttpServer())
-        .post(`/api/projects/${id}/proposals/${s.turns.at(-1)!.proposal!.id}/confirm`)
+        .post('/api/projects/' + id + '/proposals/' + proposalId + '/confirm')
         .set(auth())
+        .send({
+          requestId: turn.requestId,
+          contentHash: turn.proposal!.contentHash,
+          generation: turn.proposal!.generation,
+        })
         .expect(201)
     ).body as EditorState;
+  };
   const create = async (payload = video) => {
     const project = (
       await request(app.getHttpServer())
@@ -179,10 +199,11 @@ describe('persisted editing and real rendering', () => {
       .expect(404);
     await request(app.getHttpServer())
       .post(`/api/projects/${id}/proposals/${pending.turns[0]!.proposal!.id}/confirm`)
+      .send({ requestId: pending.turns[0]!.requestId, contentHash: 'test', generation: 1 })
       .set({ Authorization: `Bearer ${otherToken}` })
       .expect(404);
   });
-  it('copies independently, moves stable IDs, invalidates pending cards on deletion, and retains canvas', async () => {
+  it('copies independently, moves stable IDs, requires cancellation before deletion, and retains canvas', async () => {
     const { id } = await create();
     let saved = await confirm(id, await send(id, intent()));
     const first = saved.timeline.clips[0]!.id;
@@ -216,9 +237,19 @@ describe('persisted editing and real rendering', () => {
       .delete(`/api/projects/${id}/clips/${copy}`)
       .set(auth())
       .send({ requestId, expectedRevision: saved.timeline.revision })
+      .expect(409);
+    expect((await state(id)).timeline.clips).toHaveLength(2);
+    await request(app.getHttpServer())
+      .post(`/api/projects/${id}/proposals/${pending.turns.at(-1)!.proposal!.id}/cancel`)
+      .set(auth())
+      .expect(201);
+    await request(app.getHttpServer())
+      .delete(`/api/projects/${id}/clips/${copy}`)
+      .set(auth())
+      .send({ requestId, expectedRevision: saved.timeline.revision })
       .expect(200);
     let current = await state(id);
-    expect(current.turns.at(-1)!.proposal?.status).toBe('invalid');
+    expect(current.turns.at(-1)!.proposal?.status).toBe('cancelled');
     expect(current.timeline.clips.map((c) => c.id)).toEqual([first]);
     await request(app.getHttpServer())
       .delete(`/api/projects/${id}/clips/${copy}`)
@@ -227,6 +258,7 @@ describe('persisted editing and real rendering', () => {
       .expect(200);
     const stale = await request(app.getHttpServer())
       .post(`/api/projects/${id}/proposals/${pending.turns.at(-1)!.proposal!.id}/confirm`)
+      .send({ requestId: pending.turns.at(-1)!.requestId, contentHash: 'test', generation: 1 })
       .set(auth())
       .expect(409);
     expect(stale.body.code).toBe('EDIT_PROPOSAL_INVALID');
