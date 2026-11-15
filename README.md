@@ -139,6 +139,8 @@ pnpm dev
 
 Node 版本读取 `.nvmrc`，pnpm 版本读取 `package.json` 的 `packageManager`，依赖通过 `pnpm install --frozen-lockfile` 安装。仅缓存 pnpm 下载目录，Turbo 命令使用 `--force` 确保实际执行检查。Ubuntu 从发行版软件源安装 FFmpeg 6.1 系列及字体，并检查 libx264 / AAC、drawtext / zscale / tonemap 和旋转参数；具体补丁版本打印在日志中，随 Ubuntu 安全更新变化。
 
+Windows Electron 测试也会调用 FFmpeg 生成本地测试视频，CI 在运行前通过 Chocolatey 安装 FFmpeg，验证 FFmpeg / FFprobe 可执行，并将路径写入 `FFMPEG_PATH` / `FFPROBE_PATH` 供后续步骤使用。若出现 `spawn ffmpeg ENOENT`，表示测试环境找不到 FFmpeg，尚未进入缩略图或播放器行为验证；本地安装过 FFmpeg 不代表 GitHub runner 已安装。
+
 CI 使用 runner 自己的临时数据库、Redis 和文件目录，不需要配置 GitHub Secrets 或复制本地 `.env`，不会连接开发数据库。常规检查不启动 API 常驻服务或 Ollama；剪辑集成测试使用固定模型响应，视频处理与导出仍运行真实 FFmpeg。真实模型、真实 API 的浏览器与 Electron 全链路验收继续按下文在本地执行；仅 `CEV_E2E_REAL_API=1` 会启用这部分测试，`0` 不会启用。
 
 端到端测试失败时上传 HTML 报告、trace、截图和测试输出，服务端集成测试上传 JUnit 结果，保留 7 天。可从失败运行的 Artifacts 下载，在本地通过 `pnpm --filter @cev/e2e exec playwright show-report <报告目录>` 或 `pnpm --filter @cev/e2e exec playwright show-trace <trace.zip>` 查看。安装依赖或构建阶段失败时可能尚未生成报告，需查看对应步骤日志。
