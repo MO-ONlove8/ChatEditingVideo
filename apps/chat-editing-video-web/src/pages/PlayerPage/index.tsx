@@ -33,7 +33,20 @@ export function PlayerPage() {
       ) : (
         editor.data && (
           <section className={`${common.panel} ${styles.standalonePlayer}`}>
-            <TimelinePlayer timeline={editor.data.timeline} standalone />
+            {editor.data.composition?.status === 'ready' && editor.data.composition.manifest ? (
+              <TimelinePlayer
+                timeline={editor.data.timeline}
+                manifest={editor.data.composition.manifest}
+                projectId={id}
+                standalone
+              />
+            ) : (
+              <Notice kind={editor.data.composition?.status === 'failed' ? 'error' : undefined}>
+                {editor.data.composition?.status === 'failed'
+                  ? '正式预览失败：' + editor.data.composition.error
+                  : '正式预览准备中…'}
+              </Notice>
+            )}
           </section>
         )
       )}

@@ -136,6 +136,21 @@ export class MediaFilesController {
     )
       throw new BadRequestException('素材处理版本已变化，请刷新后重试');
     const source = editingSource(asset);
+    if (asset.kind !== 'video') {
+      if (asset.status !== 'ready') throw new BadRequestException('素材尚未就绪');
+      await this.send(
+        asset.kind === 'srt' ? asset.storageKey : asset.auxiliary!.workingKey!,
+        asset.kind === 'image'
+          ? 'image/png'
+          : asset.kind === 'audio'
+            ? 'audio/wav'
+            : 'application/x-subrip; charset=utf-8',
+        req,
+        res,
+        session,
+      );
+      return;
+    }
     if (asset.status !== 'ready' || !source) throw new BadRequestException('素材尚未处理完成');
     await this.send(
       source.key,

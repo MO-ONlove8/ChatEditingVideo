@@ -115,3 +115,36 @@
     box-shadow: 0 0 0 1px rgb(255 255 255 / 65%);
   }
 }
+
+.auxiliary {
+  position: relative;
+  border-top: 1px solid #ccc;
+}
+.auxiliary button {
+  border: 1px solid #aaa;
+  background: #e3e3e3;
+  text-align: left;
+  overflow: hidden;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 2px 4px;
+}
+.trackHint {
+  position: absolute;
+  z-index: 3;
+  pointer-events: none;
+  background: rgb(255 255 255 / 85%);
+  font-size: 9px;
+  line-height: 11px;
+  padding: 0 2px;
+}
+.clipProperties {
+  position: absolute;
+  bottom: 1px;
+  right: 2px;
+  z-index: 2;
+  font-size: 9px;
+  border: 0;
+  background: #eee;
+  cursor: pointer;
+}

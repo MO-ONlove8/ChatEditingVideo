@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { FrameClipSchema } from '../timeline.js';
+import { TimelineSchema } from '../timeline.js';
+import { MediaAssetSchema } from './media.js';
 
 /**
  * An EditPlan is what the chat/LLM produces: a declarative timeline.
@@ -55,9 +57,22 @@ export const DirectRenderPlanSchema = RenderPlanSchema.extend({
     .max(100),
 });
 export type DirectRenderPlan = z.infer<typeof DirectRenderPlanSchema>;
+export const CompositeRenderPlanSchema = DirectRenderPlanSchema.extend({
+  version: z.literal(4),
+  projectId: z.uuid(),
+  ownerId: z.uuid(),
+  projectName: z.string(),
+  outputType: z.enum(['mp4', 'srt']),
+  configHash: z.string(),
+  fontHash: z.string(),
+  timeline: TimelineSchema,
+  assets: z.array(MediaAssetSchema),
+});
+export type CompositeRenderPlan = z.infer<typeof CompositeRenderPlanSchema>;
 export const EditPlanSchema = z.discriminatedUnion('version', [
   LegacyEditPlanSchema,
   RenderPlanSchema,
   DirectRenderPlanSchema,
+  CompositeRenderPlanSchema,
 ]);
 export type EditPlan = z.infer<typeof EditPlanSchema>;

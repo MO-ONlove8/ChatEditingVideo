@@ -17,6 +17,8 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   margin: 0 8px 0 16px;
+  min-width: 80px;
+  flex-shrink: 1;
 }
 .editorHeading button {
   font-size: 12px;
@@ -26,5 +28,16 @@
 @media (max-width: 1100px) {
   .editorPage {
     padding: 16px;
+  }
+  .editorHeading > span {
+    display: none;
+  }
+  .editorHeading {
+    gap: 8px;
+  }
+  .editorHeading h1 {
+    font-size: 16px;
+    margin-left: 0;
+    max-width: 200px;
   }
 }

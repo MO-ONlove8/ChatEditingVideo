@@ -20,6 +20,9 @@ import {
   UploadSchema,
   type CreateUploadsInput,
   type MediaAsset,
+  AuxiliaryPolicy,
+  type AssetKind,
+  emptyPackaging,
 } from '@cev/shared';
 import { DB, type Database } from '../database/database.module.js';
 import {
@@ -31,7 +34,7 @@ import {
   uploads,
   timelines,
   proposals,
-  chatTurns,
+  compositions,
   type MediaAssetRow,
 } from '../database/schema.js';
 import { StorageService } from '../storage/storage.service.js';
@@ -39,6 +42,7 @@ import { MediaTools } from './media-tools.service.js';
 import { MediaProcessing, projectLock } from './media-processing.service.js';
 import { APP_CONFIG } from '../config/config.module.js';
 import type { Env } from '../config/env.js';
+import { AuxiliaryTools } from '../composition/auxiliary-tools.service.js';
 
 export function toMediaAsset(row: MediaAssetRow): MediaAsset {
   return MediaAssetSchema.parse({ ...row, createdAt: row.createdAt.toISOString() });
@@ -58,6 +62,7 @@ export class MediaService implements OnApplicationBootstrap, OnModuleDestroy {
     @Inject(DB) private readonly db: Database,
     private readonly storage: StorageService,
     private readonly tools: MediaTools,
+    private readonly auxiliaryTools: AuxiliaryTools,
     private readonly processing: MediaProcessing,
     @Inject(APP_CONFIG) private readonly env: Env,
   ) {}
@@ -79,6 +84,7 @@ export class MediaService implements OnApplicationBootstrap, OnModuleDestroy {
       maxAssets: this.env.MEDIA_MAX_ASSETS,
       maxBytes: this.env.UPLOAD_MAX_MB * 1024 * 1024,
       fps: 30 as const,
+      auxiliary: AuxiliaryPolicy,
     };
   }
   async assertProject(id: string, ownerId: string) {
@@ -138,10 +144,20 @@ export class MediaService implements OnApplicationBootstrap, OnModuleDestroy {
   async createUploads(input: CreateUploadsInput, ownerId: string) {
     if (new Set(input.files.map((f) => f.id)).size !== input.files.length)
       throw new BadRequestException('上传标识重复');
-    if (input.files.some((f) => !/\.(mp4|mov)$/i.test(f.fileName)))
-      throw new BadRequestException('仅支持 MP4 / MOV');
-    if (input.files.some((f) => f.sizeBytes > this.policy().maxBytes))
-      throw new BadRequestException(`单文件最大 ${this.env.UPLOAD_MAX_MB} MB`);
+    const kinds = new Set(input.files.map((f) => f.kind ?? 'video'));
+    if (kinds.size !== 1) throw new BadRequestException('每批仅上传同一类型');
+    const kind = input.files[0]!.kind ?? 'video';
+    if (kind !== 'video' && (!input.projectId || input.files.length !== 1))
+      throw new BadRequestException('图像、声音和SRT仅可在已有任务中每次上传一个');
+    const accepted: Record<AssetKind, RegExp> = {
+      video: /\.(mp4|mov)$/i,
+      image: /\.(png|jpe?g|webp)$/i,
+      audio: /\.(mp3|wav|m4a)$/i,
+      srt: /\.srt$/i,
+    };
+    const limitBytes = kind === 'video' ? this.policy().maxBytes : AuxiliaryPolicy[kind].maxBytes;
+    if (input.files.some((f) => !accepted[kind].test(f.fileName) || f.sizeBytes > limitBytes))
+      throw new BadRequestException('文件格式或大小超出该类型限制');
     await this.db.transaction(async (tx) => {
       await tx.execute(ownerLock(ownerId));
       if (input.projectId) {
@@ -178,7 +194,8 @@ export class MediaService implements OnApplicationBootstrap, OnModuleDestroy {
         if (
           old.contextId !== input.contextId ||
           old.fileName !== file.fileName ||
-          old.sizeBytes !== file.sizeBytes
+          old.sizeBytes !== file.sizeBytes ||
+          old.kind !== (file.kind ?? 'video')
         )
           throw new ConflictException('上传标识已被使用');
       }
@@ -186,7 +203,13 @@ export class MediaService implements OnApplicationBootstrap, OnModuleDestroy {
         ? await tx
             .select({ n: count() })
             .from(mediaAssets)
-            .where(and(eq(mediaAssets.projectId, projectId), eq(mediaAssets.removed, false)))
+            .where(
+              and(
+                eq(mediaAssets.projectId, projectId),
+                eq(mediaAssets.removed, false),
+                eq(mediaAssets.kind, kind),
+              ),
+            )
         : [{ n: 0 }];
       const [reserved] = await tx
         .select({ n: count() })
@@ -198,13 +221,18 @@ export class MediaService implements OnApplicationBootstrap, OnModuleDestroy {
               ? eq(uploadContexts.projectId, projectId)
               : eq(uploadContexts.id, input.contextId),
             inArray(uploads.status, activeUploads),
+            eq(uploads.kind, kind),
           ),
         );
       const fresh = input.files.filter((f) => !previous.some((p) => p.id === f.id));
-      if (assets!.n + reserved!.n + fresh.length > this.env.MEDIA_MAX_ASSETS)
-        throw new BadRequestException(
-          `每个任务最多 ${this.env.MEDIA_MAX_ASSETS} 个素材（包含上传中）`,
-        );
+      const maxAssets =
+        kind === 'video'
+          ? this.env.MEDIA_MAX_ASSETS
+          : kind === 'srt'
+            ? Number.MAX_SAFE_INTEGER
+            : AuxiliaryPolicy[kind].maxAssets;
+      if (assets!.n + reserved!.n + fresh.length > maxAssets)
+        throw new BadRequestException(`每个任务最多 ${maxAssets} 个${kind}素材（包含上传中）`);
       if (fresh.length)
         await tx
           .insert(uploads)
@@ -229,6 +257,7 @@ export class MediaService implements OnApplicationBootstrap, OnModuleDestroy {
     const prefix = `.tmp/uploads/${id}`;
     const temp = `${prefix}/${randomUUID()}.part`;
     let stored: string | undefined;
+    let derived: string | undefined;
     let committed = false;
     const timer = setInterval(() => {
       void this.upload(id, ownerId)
@@ -240,7 +269,11 @@ export class MediaService implements OnApplicationBootstrap, OnModuleDestroy {
     try {
       await mkdir(this.storage.resolve(prefix), { recursive: true });
       let bytes = 0;
-      const maxBytes = Math.min(claimed.sizeBytes, this.policy().maxBytes);
+      const kind = (claimed.kind ?? 'video') as AssetKind;
+      const maxBytes = Math.min(
+        claimed.sizeBytes,
+        kind === 'video' ? this.policy().maxBytes : AuxiliaryPolicy[kind].maxBytes,
+      );
       const limit = new Transform({
         transform(chunk: Buffer, _encoding, callback) {
           bytes += chunk.length;
@@ -260,7 +293,22 @@ export class MediaService implements OnApplicationBootstrap, OnModuleDestroy {
         .where(and(eq(uploads.id, id), eq(uploads.status, 'uploading')))
         .returning();
       if (!validating) throw new Error('上传已取消');
-      const info = await this.tools.probe(this.storage.resolve(temp), false, abort.signal);
+      const info =
+        kind === 'video'
+          ? await this.tools.probe(this.storage.resolve(temp), false, abort.signal)
+          : null;
+      let auxiliary =
+        kind === 'video'
+          ? null
+          : await this.auxiliaryTools.prepare(
+              this.storage.resolve(temp),
+              kind,
+              claimed.fileName,
+              `${prefix}/derived`,
+              abort.signal,
+            );
+      if (kind === 'audio' && auxiliary)
+        auxiliary = await this.auxiliaryTools.paddedAudio(auxiliary, abort.signal);
       await this.db.transaction(async (tx) => {
         await tx.execute(ownerLock(ownerId));
         const [current] = await tx.select().from(uploads).where(eq(uploads.id, id));
@@ -273,6 +321,7 @@ export class MediaService implements OnApplicationBootstrap, OnModuleDestroy {
         if (!context) throw new Error('上传已取消');
         let projectId = context.projectId;
         if (!projectId) {
+          if (kind !== 'video') throw new BadRequestException('只有视频上传可以新建任务');
           const [project] = await tx
             .insert(projects)
             .values({ ownerId, name: beijingName() })
@@ -296,35 +345,57 @@ export class MediaService implements OnApplicationBootstrap, OnModuleDestroy {
           );
         if (!project) throw new NotFoundException('任务不存在');
         const assetId = randomUUID();
-        stored = `projects/${projectId}/media/${assetId}${claimed.fileName.toLowerCase().endsWith('.mov') ? '.mov' : '.mp4'}`;
+        const ext = /\.[a-z0-9]+$/i.exec(claimed.fileName)?.[0]?.toLowerCase() ?? '';
+        stored = `projects/${projectId}/media/${assetId}${ext}`;
         await this.storage.moveIn(this.storage.resolve(temp), stored);
+        if (auxiliary?.workingKey) {
+          const nextKey = `projects/${projectId}/derived/${assetId}/1/${kind === 'image' ? 'image.png' : 'audio.wav'}`;
+          derived = `projects/${projectId}/derived/${assetId}`;
+          await this.storage.moveIn(this.storage.resolve(auxiliary.workingKey), nextKey);
+          auxiliary = { ...auxiliary, workingKey: nextKey };
+        }
+        const number = kind === 'video' ? project.nextMediaNumber : (project.counters[kind] ?? 1);
         await tx.insert(mediaAssets).values({
           id: assetId,
           projectId,
-          number: project.nextMediaNumber,
+          number,
+          kind,
+          auxiliary,
+          ...(kind === 'video' ? {} : { status: 'ready', stage: '已就绪', progress: 100 }),
           fileName: claimed.fileName,
-          mimeType: claimed.fileName.toLowerCase().endsWith('.mov')
-            ? 'video/quicktime'
-            : 'video/mp4',
+          mimeType:
+            kind !== 'video'
+              ? (auxiliary?.mime ?? 'application/octet-stream')
+              : claimed.fileName.toLowerCase().endsWith('.mov')
+                ? 'video/quicktime'
+                : 'video/mp4',
           sizeBytes: bytes,
           storageKey: stored,
           original: info,
         });
-        await tx
-          .insert(mediaRuns)
-          .values({ assetId, generation: 1, queuePrefix: this.env.QUEUE_PREFIX });
+        if (kind === 'video')
+          await tx
+            .insert(mediaRuns)
+            .values({ assetId, generation: 1, queuePrefix: this.env.QUEUE_PREFIX });
         await tx
           .update(projects)
-          .set({ nextMediaNumber: project.nextMediaNumber + 1, updatedAt: new Date() })
+          .set({
+            ...(kind === 'video'
+              ? { nextMediaNumber: project.nextMediaNumber + 1 }
+              : { counters: { ...project.counters, [kind]: number + 1 } }),
+            updatedAt: new Date(),
+          })
           .where(eq(projects.id, projectId));
         await tx.update(uploads).set({ status: 'saved', assetId }).where(eq(uploads.id, id));
       });
       committed = true;
       const result = await this.uploadResult(id, ownerId);
-      if (result.asset) await this.processing.enqueueAsset(result.asset.id).catch(() => {});
+      if (result.asset && kind === 'video')
+        await this.processing.enqueueAsset(result.asset.id).catch(() => {});
       return result;
     } catch (error) {
       if (stored && !committed) await this.storage.remove(stored);
+      if (derived && !committed) await this.storage.removeTree(derived);
       await this.db
         .update(uploads)
         .set({
@@ -358,7 +429,7 @@ export class MediaService implements OnApplicationBootstrap, OnModuleDestroy {
         {
           contextId: randomUUID(),
           projectId,
-          files: [{ id, fileName: file.originalname, sizeBytes: file.size }],
+          files: [{ id, fileName: file.originalname, sizeBytes: file.size, kind: 'video' }],
         },
         ownerId,
       );
@@ -414,27 +485,29 @@ export class MediaService implements OnApplicationBootstrap, OnModuleDestroy {
           code: EditingErrorCodes.mediaReferenced,
           message: '素材仍被时间轴片段引用，请先删除相关片段',
         });
+      const packaging = timeline?.state.packaging ?? emptyPackaging();
+      const refs = [
+        ...packaging.overlays
+          .filter((o) => o.kind === 'image' && o.assetId === id)
+          .map((o) => `I${o.number}`),
+        ...packaging.audio.filter((a) => a.assetId === id).map((a) => `A${a.number}`),
+      ];
+      if (refs.length)
+        throw new ConflictException({
+          code: EditingErrorCodes.mediaReferenced,
+          message: `素材被${refs.join('、')}引用（包含暂不生效元素），请先删除元素`,
+        });
       const cards = await tx
-        .update(proposals)
-        .set({ status: 'invalid' })
+        .select()
+        .from(proposals)
         .where(
           and(
             eq(proposals.projectId, asset.projectId),
             eq(proposals.status, 'pending'),
-            sql`${proposals.previewClip}->>'source' = ${id}`,
+            sql`(${proposals.previewClip}->>'source' = ${id} or ${proposals.operation}::text like ${`%${id}%`})`,
           ),
-        )
-        .returning({ turnId: proposals.turnId });
-      if (cards.length)
-        await tx
-          .update(chatTurns)
-          .set({ status: 'done' })
-          .where(
-            inArray(
-              chatTurns.id,
-              cards.map((c) => c.turnId),
-            ),
-          );
+        );
+      if (cards.length) throw new ConflictException('待确认卡引用此素材，请先取消该卡');
       const jobs = await tx
         .select()
         .from(editJobs)
@@ -444,9 +517,23 @@ export class MediaService implements OnApplicationBootstrap, OnModuleDestroy {
             inArray(editJobs.status, ['queued', 'running', 'failed']),
           ),
         );
-      const pinned = jobs.some(
-        (j) => j.plan.version !== 1 && j.plan.clips.some((c) => c.source === id),
-      );
+      const pinned =
+        jobs.some((j) =>
+          j.plan.version === 4
+            ? j.plan.assets.some((a) => a.id === id)
+            : j.plan.version !== 1 && j.plan.clips.some((c) => c.source === id),
+        ) ||
+        (
+          await tx
+            .select()
+            .from(compositions)
+            .where(
+              and(
+                eq(compositions.projectId, asset.projectId),
+                inArray(compositions.status, ['processing', 'failed']),
+              ),
+            )
+        ).some((c) => JSON.stringify(c.snapshot).includes(id));
       if (pinned) {
         // Retain every immutable source until all export snapshots release it.
         await this.storage.removeTree(`.cache/${asset.id}`);
@@ -506,7 +593,22 @@ export class MediaService implements OnApplicationBootstrap, OnModuleDestroy {
             ),
           );
         if (
-          !jobs.some((j) => j.plan.version !== 1 && j.plan.clips.some((c) => c.source === asset.id))
+          !jobs.some((j) =>
+            j.plan.version === 4
+              ? j.plan.assets.some((a) => a.id === asset.id)
+              : j.plan.version !== 1 && j.plan.clips.some((c) => c.source === asset.id),
+          ) &&
+          !(
+            await tx
+              .select()
+              .from(compositions)
+              .where(
+                and(
+                  eq(compositions.projectId, projectId),
+                  inArray(compositions.status, ['processing', 'failed']),
+                ),
+              )
+          ).some((c) => JSON.stringify(c.snapshot).includes(asset.id))
         )
           await this.purge(asset);
       });

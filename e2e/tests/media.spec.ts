@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { expect, test, type Page, type Route } from '@playwright/test';
-import { videoFixture } from '../../apps/chat-editing-video-server/test/support/video.js';
+import { videoFixture, execute } from '../../apps/chat-editing-video-server/test/support/video.js';
 
 const token = 'a'.repeat(43);
 const projectId = '00000000-0000-4000-8000-000000000101';
@@ -21,8 +21,29 @@ const pixel = Buffer.from(
   'base64',
 );
 let file: string;
+let mixed: Buffer;
 test.beforeAll(async () => {
   file = await videoFixture(path.resolve('test-results', 'numbered.mp4'));
+  const audio = path.resolve('test-results', 'media-mix.m4a');
+  await execute(
+    process.env.FFMPEG_PATH ?? 'ffmpeg',
+    [
+      '-v',
+      'error',
+      '-y',
+      '-f',
+      'lavfi',
+      '-i',
+      'anullsrc=r=48000:cl=stereo',
+      '-t',
+      '1.2',
+      '-c:a',
+      'aac',
+      audio,
+    ],
+    { windowsHide: true },
+  );
+  mixed = await readFile(audio);
 });
 
 async function install(page: Page, failImages = false) {
@@ -84,6 +105,21 @@ async function install(page: Page, failImages = false) {
           },
           turns: [],
           nextCursor: null,
+          composition: withTimeline
+            ? {
+                status: 'ready',
+                revision: 1,
+                error: null,
+                manifest: {
+                  hash: 'media-mix-fixture',
+                  frames: 36,
+                  canvas: { width: 320, height: 180 },
+                  overlays: [],
+                  audioKey: 'test-mix',
+                  fontHash: 'test',
+                },
+              }
+            : null,
         },
       });
     if (endpoint === '/uploads') {
@@ -153,9 +189,12 @@ async function install(page: Page, failImages = false) {
       endpoint.endsWith('/image')
     )
       return route.fulfill({ contentType: 'image/png', body: pixel });
-    if (/^\/media\/[^/]+\/content$/.test(endpoint)) {
+    if (
+      /^\/media\/[^/]+\/content$/.test(endpoint) ||
+      endpoint === `/projects/${projectId}/composition-resource`
+    ) {
       expect(req.headers()['authorization']).toBe(`Bearer ${token}`);
-      const video = await readFile(file);
+      const video = endpoint.endsWith('/composition-resource') ? mixed : await readFile(file);
       const range = /^bytes=(\d+)-(\d*)$/.exec(req.headers()['range'] ?? '');
       const start = range ? Number(range[1]) : 0;
       const end = range?.[2] ? Math.min(Number(range[2]), video.length - 1) : video.length - 1;

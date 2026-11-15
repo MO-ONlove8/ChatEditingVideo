@@ -11,6 +11,7 @@ import {
   timestamp,
   uuid,
   uniqueIndex,
+  primaryKey,
 } from 'drizzle-orm/pg-core';
 import type {
   EditPlan,
@@ -19,6 +20,8 @@ import type {
   Timeline,
   EditOperation,
   Proposal,
+  AuxiliaryInfo,
+  CompositionManifest,
 } from '@cev/shared';
 
 const timestamps = {
@@ -69,6 +72,7 @@ export const projects = pgTable('projects', {
   name: text('name').notNull(),
   description: text('description'),
   nextMediaNumber: integer('next_media_number').notNull().default(1),
+  counters: jsonb('counters').$type<Record<string, number>>().notNull().default({}),
   ...timestamps,
 });
 
@@ -84,6 +88,8 @@ export const mediaAssets = pgTable(
     sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull(),
     storageKey: text('storage_key').notNull().unique(),
     number: integer('number').notNull().default(1),
+    kind: text('kind').notNull().default('video'),
+    auxiliary: jsonb('auxiliary').$type<AuxiliaryInfo>(),
     status: text('status').notNull().default('queued'),
     stage: text('stage').notNull().default('等待处理'),
     progress: integer('progress').notNull().default(0),
@@ -115,6 +121,7 @@ export const uploads = pgTable('uploads', {
   contextId: uuid('context_id')
     .notNull()
     .references(() => uploadContexts.id, { onDelete: 'cascade' }),
+  kind: text('kind').notNull().default('video'),
   fileName: text('file_name').notNull(),
   sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull(),
   status: text('status').notNull().default('pending'),
@@ -154,6 +161,8 @@ export const editJobs = pgTable(
     plan: jsonb('plan').$type<EditPlan>().notNull(),
     queuePrefix: text('queue_prefix').notNull().default('bull'),
     revision: integer('revision'),
+    outputType: text('output_type').notNull().default('mp4'),
+    configHash: text('config_hash').notNull().default('legacy'),
     generation: integer('generation').notNull().default(1),
     executionId: uuid('execution_id'),
     heartbeatAt: timestamp('heartbeat_at', { withTimezone: true }),
@@ -182,6 +191,7 @@ export const chatTurns = pgTable(
       .notNull()
       .references(() => projects.id, { onDelete: 'cascade' }),
     requestId: uuid('request_id').notNull(),
+    context: jsonb('context').$type<{ playhead: number; selectedId?: string }>(),
     text: text('text').notNull(),
     reply: text('reply').notNull().default(''),
     status: text('status').notNull().default('understanding'),
@@ -197,6 +207,7 @@ export const chatTurns = pgTable(
   ],
 );
 export const proposals = pgTable('edit_proposals', {
+  inputHash: text('input_hash'),
   id: uuid('id').primaryKey().defaultRandom(),
   projectId: uuid('project_id')
     .notNull()
@@ -210,8 +221,16 @@ export const proposals = pgTable('edit_proposals', {
   operation: jsonb('operation').$type<EditOperation>().notNull(),
   sourceLabel: text('source_label').notNull(),
   destinationLabel: text('destination_label').notNull(),
-  previewClip: jsonb('preview_clip').$type<Proposal['previewClip']>().notNull(),
+  previewClip: jsonb('preview_clip').$type<Proposal['previewClip']>(),
   appliedRevision: integer('applied_revision'),
+  previewStatus: text('preview_status').notNull().default('processing'),
+  previewExecution: uuid('preview_execution'),
+  previewError: text('preview_error'),
+  contentHash: text('content_hash'),
+  generation: integer('generation').notNull().default(1),
+  candidate: jsonb('candidate').$type<Timeline>(),
+  manifest: jsonb('manifest').$type<CompositionManifest>(),
+  details: jsonb('details').$type<string[]>().notNull().default([]),
 });
 export const timelineMutations = pgTable('timeline_mutations', {
   requestId: uuid('request_id').primaryKey(),
@@ -221,3 +240,35 @@ export const timelineMutations = pgTable('timeline_mutations', {
   clipId: uuid('clip_id').notNull(),
   revision: integer('revision').notNull(),
 });
+
+export const compositions = pgTable(
+  'compositions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    revision: integer('revision').notNull(),
+    status: text('status').notNull().default('processing'),
+    executionId: uuid('execution_id'),
+    error: text('error'),
+    manifest: jsonb('manifest').$type<CompositionManifest>(),
+    snapshot: jsonb('snapshot').$type<Timeline>().notNull(),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex('composition_revision').on(t.projectId, t.revision)],
+);
+
+export const editingOperations = pgTable(
+  'editing_operations',
+  {
+    requestId: uuid('request_id').primaryKey(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    proposalId: uuid('proposal_id').references(() => proposals.id, { onDelete: 'cascade' }),
+    revision: integer('revision').notNull(),
+    contentHash: text('content_hash').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.projectId, t.requestId] })],
+);

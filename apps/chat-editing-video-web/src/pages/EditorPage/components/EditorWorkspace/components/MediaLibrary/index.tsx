@@ -42,7 +42,7 @@ export function MediaLibrary({ projectId }: { projectId?: string }) {
       transfer: item,
       asset: assets.data?.find((asset) => asset.id === item.asset?.id) ?? item.asset,
     }));
-  for (const asset of assets.data ?? []) {
+  for (const asset of (assets.data ?? []).filter((a) => a.kind === 'video')) {
     if (!rows.some((row) => row.asset?.id === asset.id))
       rows.push({ key: `${asset.id}:${asset.generation}`, transfer: undefined, asset });
   }
@@ -64,7 +64,8 @@ export function MediaLibrary({ projectId }: { projectId?: string }) {
         <h2>
           素材{' '}
           <small className={common.muted}>
-            {assets.data?.length ?? 0} / {policy.data?.maxAssets ?? 10}
+            {assets.data?.filter((a) => a.kind === 'video').length ?? 0} /{' '}
+            {policy.data?.maxAssets ?? 10}
           </small>
         </h2>
         <Button

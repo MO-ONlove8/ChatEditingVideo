@@ -10,6 +10,7 @@ import type { Queue } from 'bullmq';
 import { and, desc, eq, sql, inArray } from 'drizzle-orm';
 import {
   timelineFrames,
+  effectiveRange,
   type CreateProjectInput,
   type Project,
   type UpdateProjectInput,
@@ -18,6 +19,7 @@ import { DB, type Database } from '../database/database.module.js';
 import { editJobs, projects, mediaAssets, timelines, type ProjectRow } from '../database/schema.js';
 import { StorageService } from '../storage/storage.service.js';
 import { EDIT_QUEUE } from '../jobs/jobs.constants.js';
+import { CompositionService } from '../composition/composition.service.js';
 import { MediaService } from '../media/media.service.js';
 
 export function toProject(row: ProjectRow): Project {
@@ -45,6 +47,7 @@ export class ProjectsService {
     private readonly storage: StorageService,
     @InjectQueue(EDIT_QUEUE) private readonly queue: Queue,
     private readonly media: MediaService,
+    private readonly composition: CompositionService,
   ) {}
 
   async list(ownerId: string): Promise<Project[]> {
@@ -97,9 +100,28 @@ export class ProjectsService {
     return rows.map((row) => {
       const values = counts.find((c) => c.id === row.id);
       const state = states.find((t) => t.projectId === row.id)?.state;
-      const job = jobs.find((j) => j.projectId === row.id && j.plan.version !== 1);
+      const job = jobs.find(
+        (j) => j.projectId === row.id && j.plan.version !== 1 && j.outputType === 'mp4',
+      );
       return {
         ...row,
+        hasSubtitles: Boolean(
+          state?.packaging?.subtitles.some((s) =>
+            effectiveRange({ mode: 'fixed', ...s }, timelineFrames(state)),
+          ),
+        ),
+        latestSrtJob: (() => {
+          const j = jobs.find((j) => j.projectId === row.id && j.outputType === 'srt');
+          return j
+            ? {
+                id: j.id,
+                revision: j.revision,
+                status: j.status,
+                progress: j.progress,
+                error: j.error,
+              }
+            : null;
+        })(),
         mediaCount: values?.total ?? 0,
         processingCount: values?.processing ?? 0,
         failedCount: values?.failed ?? 0,
@@ -130,11 +152,37 @@ export class ProjectsService {
     const [job] = await this.db
       .select()
       .from(editJobs)
-      .where(and(eq(editJobs.projectId, id), sql`${editJobs.revision} is not null`))
+      .where(
+        and(
+          eq(editJobs.projectId, id),
+          eq(editJobs.outputType, 'mp4'),
+          sql`${editJobs.revision} is not null`,
+        ),
+      )
+      .orderBy(desc(editJobs.createdAt))
+      .limit(1);
+    const [srt] = await this.db
+      .select()
+      .from(editJobs)
+      .where(and(eq(editJobs.projectId, id), eq(editJobs.outputType, 'srt')))
       .orderBy(desc(editJobs.createdAt))
       .limit(1);
     return {
       ...toProject(row),
+      hasSubtitles: Boolean(
+        state?.state.packaging?.subtitles.some((s) =>
+          effectiveRange({ mode: 'fixed', ...s }, timelineFrames(state.state)),
+        ),
+      ),
+      latestSrtJob: srt
+        ? {
+            id: srt.id,
+            revision: srt.revision,
+            status: srt.status,
+            progress: srt.progress,
+            error: srt.error,
+          }
+        : null,
       hasMainVideo: Boolean(state?.state.clips.length),
       durationFrames: state ? timelineFrames(state.state) : 0,
       timelineRevision: state?.state.revision ?? 0,
@@ -193,7 +241,9 @@ export class ProjectsService {
       await this.storage.remove(`renders/${job.id}.manifest.json`);
       await this.storage.removeTree(`renders/${job.id}`);
     }
+    await this.composition.cancelProject(id);
     await this.media.purgeProject(id);
+    await this.storage.removeTree(`projects/${id}`);
     await this.db.delete(projects).where(and(eq(projects.id, id), eq(projects.ownerId, ownerId)));
   }
 

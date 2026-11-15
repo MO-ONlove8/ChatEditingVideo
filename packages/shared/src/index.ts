@@ -12,3 +12,5 @@ export * from './schemas/auth.js';
 export * from './timecode.js';
 export * from './timeline.js';
 export * from './schemas/editing.js';
+export * from './elements.js';
+export * from './srt.js';

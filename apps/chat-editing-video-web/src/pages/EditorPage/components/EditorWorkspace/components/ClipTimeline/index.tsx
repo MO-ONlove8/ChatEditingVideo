@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent, type RefObject } from 'react';
 import type { PlayerRef } from '@remotion/player';
-import { clipFrames, formatTimecode, timelineFrames, type Timeline } from '@cev/shared';
+import {
+  clipFrames,
+  formatTimecode,
+  timelineFrames,
+  emptyPackaging,
+  effectiveRange,
+  packagingImpacts,
+  type Timeline,
+} from '@cev/shared';
 import { Button } from '../../../../../../components/Button';
 import { ConfirmDialog } from '../../../../../../components/ConfirmDialog';
 import common from '../../../../../../styles/common.module.less';
@@ -13,12 +21,14 @@ export function ClipTimeline({
   playerRef,
   stopAt,
   onDelete,
+  onSelect,
 }: {
   timeline: Timeline;
   frame: number;
   playing: boolean;
   playerRef: RefObject<PlayerRef | null>;
   stopAt: RefObject<number | null>;
+  onSelect?: (id: string) => void;
   onDelete: (id: string, requestId: string) => Promise<void>;
 }) {
   const scroll = useRef<HTMLDivElement>(null),
@@ -143,6 +153,57 @@ export function ClipTimeline({
     { length: Math.floor(total / (30 * tickSeconds)) + 1 },
     (_, i) => i * 30 * tickSeconds,
   ).filter((f) => f * scale >= left - width && f * scale <= left + 2 * width);
+  const p = timeline.packaging ?? emptyPackaging();
+  const groups = [
+    {
+      name: '字幕',
+      items: p.subtitles.map((s) => ({
+        id: s.id,
+        label: 'S' + s.number,
+        range: { mode: 'fixed' as const, startFrame: s.startFrame, endFrame: s.endFrame },
+      })),
+    },
+    {
+      name: '文字',
+      items: p.overlays
+        .filter((o) => o.kind === 'text')
+        .map((o) => ({ id: o.id, label: 'T' + o.number, range: o.range })),
+    },
+    {
+      name: '图像',
+      items: p.overlays
+        .filter((o) => o.kind === 'image')
+        .map((o) => ({ id: o.id, label: 'I' + o.number, range: o.range })),
+    },
+    {
+      name: '旁白',
+      items: p.audio
+        .filter((a) => a.role === 'narration')
+        .map((a) => ({ id: a.id, label: 'A' + a.number, range: a.range })),
+    },
+    {
+      name: 'BGM',
+      items: p.audio
+        .filter((a) => a.role === 'bgm')
+        .map((a) => ({ id: a.id, label: 'A' + a.number, range: a.range })),
+    },
+  ];
+  let lane = 0;
+  const labels: { name: string; row: number }[] = [];
+  const auxiliary = groups.flatMap((group) => {
+    labels.push({ name: group.name, row: lane });
+    const ends: number[] = [];
+    const items = group.items.flatMap((item) => {
+      const range = effectiveRange(item.range, total);
+      if (!range) return [];
+      let row = ends.findIndex((end) => end < range.startFrame);
+      if (row < 0) row = ends.length;
+      ends[row] = range.endFrame;
+      return [{ ...item, ...range, row: lane + row, group: group.name }];
+    });
+    lane += Math.max(1, ends.length);
+    return items;
+  });
   return (
     <section aria-label="主视频时间轴" className={`${common.panel} ${styles.timelinePanel}`}>
       <div className={`${common.row} ${common.between}`}>
@@ -200,7 +261,7 @@ export function ClipTimeline({
         >
           <div
             className={styles.clipTrack}
-            style={{ width: length }}
+            style={{ width: length, height: 94 + lane * 30 }}
             onPointerDown={(event) => {
               if (event.button !== 0 || !event.isPrimary || !playerRef.current) return;
               if ((event.target as HTMLElement).closest('[data-timeline-action]')) return;
@@ -265,6 +326,14 @@ export function ClipTimeline({
                     >
                       Clip{i + 1} · {formatTimecode(clipFrames(c))}
                     </button>
+                    <button
+                      data-timeline-action
+                      className={styles.clipProperties}
+                      aria-label={'Clip' + (i + 1) + '声音属性'}
+                      onClick={() => onSelect?.(c.id)}
+                    >
+                      原声
+                    </button>
                     <Button
                       className={styles.clipDelete}
                       aria-label={`删除Clip${i + 1}`}
@@ -278,6 +347,48 @@ export function ClipTimeline({
                   </div>
                 );
               })}
+            </div>
+            <div className={styles.auxiliary} style={{ height: lane * 30 }}>
+              {labels.map((g) => (
+                <span
+                  key={g.name}
+                  className={styles.trackHint}
+                  style={{ top: g.row * 30, left: left }}
+                >
+                  {g.name}
+                </span>
+              ))}
+              {auxiliary
+                .filter(
+                  (a) =>
+                    a.endFrame * scale >= left - width && a.startFrame * scale <= left + 2 * width,
+                )
+                .map((a) => (
+                  <button
+                    key={a.id}
+                    data-timeline-action
+                    aria-label={'选择' + a.label}
+                    title={
+                      a.group +
+                      ' ' +
+                      a.label +
+                      ' ' +
+                      formatTimecode(a.startFrame) +
+                      ' → ' +
+                      formatTimecode(a.endFrame)
+                    }
+                    style={{
+                      position: 'absolute',
+                      left: a.startFrame * scale,
+                      top: a.row * 30,
+                      width: Math.max(3, (a.endFrame - a.startFrame + 1) * scale),
+                      height: 26,
+                    }}
+                    onClick={() => onSelect?.(a.id)}
+                  >
+                    {a.label}
+                  </button>
+                ))}
             </div>
             <div
               role="slider"
@@ -316,6 +427,29 @@ export function ClipTimeline({
         }}
       >
         <p>仅删除该片段，素材和其他复制片段保留。首版不支持撤销。</p>
+        {deleting &&
+          packagingImpacts(
+            p,
+            total,
+            total -
+              (timeline.clips.find((c) => c.id === deleting.id)
+                ? clipFrames(timeline.clips.find((c) => c.id === deleting.id)!)
+                : 0),
+            true,
+          ).map((i) => (
+            <p key={i.label}>
+              {i.label}：
+              {
+                {
+                  inactive: '暂不生效',
+                  partial: '部分生效',
+                  restored: '恢复',
+                  whole: '全片范围变化',
+                  picture: '画面对应关系变化；固定时间不随主轨移动',
+                }[i.state]
+              }
+            </p>
+          ))}
       </ConfirmDialog>
     </section>
   );

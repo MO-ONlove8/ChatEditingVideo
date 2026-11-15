@@ -1,4 +1,12 @@
 import { z } from 'zod';
+import {
+  AudioSettingsSchema,
+  PackagingSchema,
+  ElementOperationSchema,
+  applyElementOperation,
+  emptyPackaging,
+  validatePackaging,
+} from './elements.js';
 
 export const MAX_CLIPS = 100;
 export const MAX_TIMELINE_FRAMES = 30 * 60 * 30;
@@ -9,6 +17,7 @@ export const FrameClipSchema = z
     generation: z.number().int().positive(),
     startFrame: z.number().int().nonnegative(),
     endFrame: z.number().int().nonnegative(),
+    audio: AudioSettingsSchema.optional(),
   })
   .refine((c) => c.endFrame >= c.startFrame, '结束位置不能早于开始位置');
 export type FrameClip = z.infer<typeof FrameClipSchema>;
@@ -21,6 +30,7 @@ export const TimelineSchema = z.object({
   fps: z.literal(30),
   canvas: CanvasSchema.nullable(),
   clips: z.array(FrameClipSchema).max(MAX_CLIPS),
+  packaging: PackagingSchema.optional(),
 });
 export type Timeline = z.infer<typeof TimelineSchema>;
 export const emptyTimeline = (): Timeline => ({ revision: 0, fps: 30, canvas: null, clips: [] });
@@ -62,9 +72,23 @@ export const EditOperationSchema = z.discriminatedUnion('kind', [
     newClipId: z.uuid(),
     destination: DestinationSchema,
   }),
+  z.object({ kind: z.literal('delete-clip'), clipId: z.uuid() }),
+  ...ElementOperationSchema.options,
 ]);
 export type EditOperation = z.infer<typeof EditOperationSchema>;
 export function applyOperation(timeline: Timeline, operation: EditOperation): Timeline {
+  if (!('destination' in operation) && operation.kind !== 'delete-clip')
+    return applyElementOperation(timeline, operation);
+  if (operation.kind === 'delete-clip') {
+    if (!timeline.clips.some((c) => c.id === operation.clipId)) throw new Error('片段不存在');
+    const result = {
+      ...timeline,
+      revision: timeline.revision + 1,
+      clips: timeline.clips.filter((c) => c.id !== operation.clipId),
+    };
+    validatePackaging(result.packaging ?? emptyPackaging(), timelineFrames(result));
+    return result;
+  }
   const clips = [...timeline.clips];
   let clip: FrameClip;
   if (operation.kind === 'add') clip = operation.clip;
@@ -96,5 +120,6 @@ export function applyOperation(timeline: Timeline, operation: EditOperation): Ti
   };
   if (clips.length > MAX_CLIPS) throw new Error('每个任务最多100个Clip');
   if (timelineFrames(result) > MAX_TIMELINE_FRAMES) throw new Error('主视频累计时长不能超过30分钟');
+  validatePackaging(result.packaging ?? emptyPackaging(), timelineFrames(result));
   return result;
 }

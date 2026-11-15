@@ -3,6 +3,7 @@ import {
   ExecutorCancelRequestSchema,
   ExecutorRunRequestSchema,
   IpcChannels,
+  EditJobSchema,
   type AppInfo,
   type JobEvent,
 } from '@cev/shared';
@@ -55,9 +56,22 @@ export function registerIpc(opts: {
     try {
       const token = await sessions.read();
       if (!token) throw new Error('请先登录');
+      const metadata = await fetch(opts.appInfo.apiBaseUrl + '/jobs/' + id, {
+        headers: { Authorization: 'Bearer ' + token },
+        signal: abort.signal,
+      });
+      if (!metadata.ok) throw new Error('无法读取生成信息');
+      const job = EditJobSchema.parse(await metadata.json()),
+        extension = job.outputType;
+      const name = (job.plan.version === 4 ? job.plan.projectName : 'video')
+        .split('')
+        .map((c) => (c.charCodeAt(0) < 32 || '<>:"/\\\\|?*'.includes(c) ? '_' : c))
+        .join('')
+        .slice(0, 120);
       const result = await dialog.showSaveDialog(BrowserWindow.fromWebContents(e.sender)!, {
-        defaultPath: path.join(opts.outputDir, `video-${id}.mp4`),
-        filters: [{ name: 'MP4视频', extensions: ['mp4'] }],
+        defaultPath: path.join(opts.outputDir, name + '-v' + job.revision + '.' + extension),
+        filters: [{ name: extension === 'srt' ? 'SRT字幕' : 'MP4视频', extensions: [extension] }],
+        properties: ['showOverwriteConfirmation'],
       });
       if (result.canceled || !result.filePath || abort.signal.aborted) return { cancelled: true };
       temp = `${result.filePath}.${randomUUID()}.part`;
@@ -66,16 +80,19 @@ export function registerIpc(opts: {
         signal: abort.signal,
       });
       if (!response.ok || !response.body) throw new Error('无法读取成品，请检查登录和生成状态');
+      const destination = createWriteStream(temp, { flags: 'wx' });
       await pipeline(
         Readable.fromWeb(response.body as unknown as NodeReadableStream<Uint8Array>),
-        createWriteStream(temp, { flags: 'wx' }),
+        destination,
         { signal: abort.signal },
       );
       await rename(temp, result.filePath);
       return { cancelled: false };
     } catch (error) {
+      const cancelled = abort.signal.aborted;
+      abort.abort();
       if (temp) await rm(temp, { force: true });
-      if (abort.signal.aborted) return { cancelled: true };
+      if (cancelled) return { cancelled: true };
       throw error;
     } finally {
       downloads.delete(id);

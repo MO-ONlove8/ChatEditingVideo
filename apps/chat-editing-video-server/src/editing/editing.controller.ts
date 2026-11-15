@@ -14,6 +14,7 @@ import type { Response } from 'express';
 import {
   EditingErrorCodeSchema,
   EditingRequestSchema,
+  ElementEditSchema,
   InstructionSchema,
   encodeSse,
 } from '@cev/shared';
@@ -96,8 +97,40 @@ export class EditingController {
     @Param('id', ParseUUIDPipe) id: string,
     @Param('proposalId', ParseUUIDPipe) proposalId: string,
     @CurrentSession() session: AuthSession,
+    @Body(
+      new ZodValidationPipe(
+        z.object({
+          requestId: z.uuid(),
+          contentHash: z.string(),
+          generation: z.number().int().positive(),
+        }),
+      ),
+    )
+    verification: { requestId: string; contentHash: string; generation: number },
   ) {
-    return this.editing.decide(id, session.user.id, proposalId, true);
+    return this.editing.decide(id, session.user.id, proposalId, true, verification);
+  }
+  @Post('proposals') propose(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentSession() session: AuthSession,
+    @Body(new ZodValidationPipe(ElementEditSchema)) input: z.infer<typeof ElementEditSchema>,
+  ) {
+    return this.editing.propose(id, session.user.id, input);
+  }
+  @Post('proposals/:proposalId/update') update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('proposalId', ParseUUIDPipe) proposalId: string,
+    @CurrentSession() session: AuthSession,
+    @Body(new ZodValidationPipe(ElementEditSchema)) input: z.infer<typeof ElementEditSchema>,
+  ) {
+    return this.editing.propose(id, session.user.id, input, proposalId);
+  }
+  @Post('proposals/:proposalId/preview/retry') retryPreview(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('proposalId', ParseUUIDPipe) proposalId: string,
+    @CurrentSession() session: AuthSession,
+  ) {
+    return this.editing.retryPreview(id, session.user.id, proposalId);
   }
   @Post('proposals/:proposalId/cancel') cancel(
     @Param('id', ParseUUIDPipe) id: string,

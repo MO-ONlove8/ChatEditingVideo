@@ -139,13 +139,24 @@ export class JobsController {
       res.status(206).set('Content-Range', `bytes ${start}-${end}/${info.size}`);
     }
     res.set({
-      'Content-Type': 'video/mp4',
+      'Content-Type':
+        job.outputType === 'srt' ? 'application/x-subrip; charset=utf-8' : 'video/mp4',
       'Content-Length': String(end - start + 1),
       'Accept-Ranges': 'bytes',
       'Cache-Control': 'private, no-store',
       'X-Content-Type-Options': 'nosniff',
     });
-    if (download) res.attachment(`video-v${job.revision}.mp4`);
+    if (download)
+      res.attachment(
+        `${
+          job.plan.version === 4
+            ? job.plan.projectName
+                .split('')
+                .map((c) => (c.charCodeAt(0) < 32 || '<>:"/\\\\|?*'.includes(c) ? '_' : c))
+                .join('')
+            : 'video'
+        }-v${job.revision}.${job.outputType}`,
+      );
     if (req.method === 'HEAD') {
       res.end();
       return;

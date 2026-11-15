@@ -1,4 +1,28 @@
 import { z } from 'zod';
+export const AssetKindSchema = z.enum(['video', 'image', 'audio', 'srt']);
+export type AssetKind = z.infer<typeof AssetKindSchema>;
+export const AuxiliaryInfoSchema = z.object({
+  width: z.number().optional(),
+  height: z.number().optional(),
+  frames: z.number().int().optional(),
+  audioTrackIndex: z.number().int().nonnegative().optional(),
+  workingKey: z.string().optional(),
+  mime: z.string().optional(),
+  cues: z
+    .array(
+      z.object({
+        text: z.string(),
+        startFrame: z.number().int(),
+        endFrame: z.number().int(),
+        originalNumber: z.string(),
+        position: z.number().int(),
+        startMs: z.number(),
+        endMs: z.number(),
+      }),
+    )
+    .optional(),
+});
+export type AuxiliaryInfo = z.infer<typeof AuxiliaryInfoSchema>;
 
 export const MediaPolicySchema = z.object({
   maxBatch: z.number().int().positive(),
@@ -24,6 +48,10 @@ export type EditingMedia = z.infer<typeof EditingMediaSchema>;
 export const MediaStatusSchema = z.enum(['queued', 'processing', 'ready', 'failed']);
 
 export const MediaAssetSchema = z.object({
+  kind: AssetKindSchema.default('video'),
+  auxiliary: AuxiliaryInfoSchema.nullable().default(null),
+  editingKey: z.string().nullable().optional(),
+  normalizedKey: z.string().nullable().optional(),
   id: z.uuid(),
   projectId: z.uuid(),
   fileName: z.string(),
@@ -56,7 +84,8 @@ export const CreateUploadsSchema = z.object({
           .string()
           .min(1)
           .max(255)
-          .regex(/\.(mp4|mov)$/i, '仅支持 MP4 / MOV'),
+          .regex(/\.(mp4|mov|png|jpe?g|webp|mp3|wav|m4a|srt)$/i, '文件格式不受支持'),
+        kind: AssetKindSchema.default('video'),
         sizeBytes: z.number().int().positive(),
       }),
     )

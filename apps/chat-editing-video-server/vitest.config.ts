@@ -21,6 +21,8 @@ export default defineConfig({
           name: 'integration',
           environment: 'node',
           include: ['test/integration/**/*.spec.ts'],
+          globalSetup: ['test/support/database.global-setup.ts'],
+          setupFiles: ['test/support/database.setup.ts'],
           // Needs PostgreSQL + Redis running (pnpm db:up && pnpm db:migrate).
           testTimeout: 30_000,
           fileParallelism: false,

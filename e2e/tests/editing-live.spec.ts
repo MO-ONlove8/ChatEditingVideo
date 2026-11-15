@@ -116,11 +116,10 @@ test('real model, saved confirmation, authenticated Remotion preview and browser
   await expect(card).toContainText('00:05:00 → 00:08:00');
   await page.reload();
   await expect(page.getByLabel('剪辑确认卡')).toContainText('待确认');
-  await page.getByRole('button', { name: '播放选段预览' }).click();
-  const dialog = page.getByRole('dialog', { name: '选段播放预览' });
-  await expect(dialog.locator('canvas')).toBeVisible({ timeout: 20000 });
-  await expect(dialog.getByText(/预览加载失败/)).toHaveCount(0);
-  await dialog.getByRole('button', { name: '关闭弹窗' }).click();
+  await expect(page.getByRole('region', { name: '主视频预览' }).locator('canvas')).toBeVisible({
+    timeout: 20000,
+  });
+  await expect(page.getByRole('button', { name: '确认并保存' })).toBeEnabled({ timeout: 20000 });
   await page.getByRole('button', { name: '确认并保存' }).click();
   await expect(card).toContainText('已保存');
   await expect(page.getByRole('button', { name: '播放Clip1', exact: true })).toBeVisible();
@@ -160,9 +159,11 @@ test('real model, saved confirmation, authenticated Remotion preview and browser
   await page.getByRole('button', { name: '暂停', exact: true }).click();
   await page.screenshot({ path: test.info().outputPath('editing-workspace.png'), fullPage: true });
   await page.getByRole('button', { name: '下载成品', exact: true }).click();
-  await expect(page.getByRole('button', { name: '保存v1到本地' })).toBeVisible({ timeout: 30000 });
+  await expect(page.getByRole('button', { name: '保存MP4 v1到本地' })).toBeVisible({
+    timeout: 30000,
+  });
   const downloading = page.waitForEvent('download');
-  await page.getByRole('button', { name: '保存v1到本地' }).click();
+  await page.getByRole('button', { name: '保存MP4 v1到本地' }).click();
   const download = await downloading;
   expect(download.suggestedFilename()).toContain('.mp4');
   expect(await download.failure()).toBeNull();
@@ -259,7 +260,7 @@ test('app protocol plays protected clips at 960x600 and streams a native save', 
     await app.evaluate(({ dialog }, file) => {
       dialog.showSaveDialog = async () => ({ canceled: false, filePath: file });
     }, target);
-    await page.getByRole('button', { name: '保存v1到本地' }).click();
+    await page.getByRole('button', { name: '保存MP4 v1到本地' }).click();
     await expect(page.getByText('成品已保存到本地')).toBeVisible({ timeout: 15000 });
     const projectResponse = await api.get(`projects/${projectId}`, {
       headers: { Authorization: `Bearer ${token}` },
@@ -283,7 +284,7 @@ test('app protocol plays protected clips at 960x600 and streams a native save', 
         return globals.cevOriginalFetch!(...args);
       }) as typeof fetch;
     }, cancelledTarget);
-    await page.getByRole('button', { name: '保存v1到本地' }).click();
+    await page.getByRole('button', { name: '保存MP4 v1到本地' }).click();
     const parts = () =>
       readdir(path.dirname(cancelledTarget)).then((files) =>
         files.filter((f) => f.startsWith('cancelled.mp4.') && f.endsWith('.part')),
